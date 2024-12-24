@@ -71,13 +71,12 @@ class Supervisor(supervisor_pb2_grpc.SupervisorServicer):
             worker_info_list=raw_worker_info_list,
         )
 
-    """
-    gRPC function
-    worker_report_in()
-    Recive worker report in request and add it into queue.
-    """
-
     async def worker_report_in(self, request, context):
+        """
+        gRPC function
+        worker_report_in()
+        Recive worker report in request and add it into queue.
+        """
         worker_addr = request.worker_addr
         # worker_status = request.worker_status
         logger.info(f"Recive worker report in: {worker_addr}")
@@ -86,13 +85,12 @@ class Supervisor(supervisor_pb2_grpc.SupervisorServicer):
             supervisor_addr=self.supervisor_addr
         )
 
-    """
-    gRPC function
-    update_provider_status()
-    Update provider's status after provider status had changed.
-    """
-
     async def update_provider_status(self, request, context):
+        """
+        gRPC function
+        update_provider_status()
+        Update provider's status after provider status had changed.
+        """
         worker_addr = request.worker_addr
         provider_replica_id = request.provider_replica_id
         provider_status = request.provider_status
@@ -107,23 +105,23 @@ class Supervisor(supervisor_pb2_grpc.SupervisorServicer):
         return supervisor_pb2.UpdateProviderStatusResponse(
             provider_id=provider_replica_id
         )
-
-    """
-    supervisor function
-    get_unregistered_worker()
-    Get workers reported in and waiting in queue.
-    """
+    async def get_registered_worker(self) -> list[str]:
+        return list(self.registered_workers.keys())
 
     async def get_unregistered_worker(self) -> list[str]:
+        """
+        supervisor function
+        get_unregistered_worker()
+        Get workers reported in and waiting in queue.
+        """
         return self.unregistered_worker
 
-    """
-    supervisor function
-    get_resource_status()
-    Get status of a resource.
-    """
-
     async def get_resource_status(self, name: str) -> ResourceStatus | None:
+        """
+        supervisor function
+        get_resource_status()
+        Get status of a resource.
+        """
         resource = self.resources.get(name)
         resource_status = None
         if resource is not None:
@@ -132,35 +130,32 @@ class Supervisor(supervisor_pb2_grpc.SupervisorServicer):
             logger.error(f"Could not get resource status of: {name}")
         return resource_status
 
-    """
-    supervisor function
-    list_resource()
-    List all the resource record in supervisor
-    """
-
     async def list_resource(self) -> dict[str, ResourceInfo]:
+        """
+        supervisor function
+        list_resource()
+        List all the resource record in supervisor
+        """
         return self.resources
 
-    """
-    supervisor function
-    get_resource_info()
-    Get a resource info
-    """
-
     async def get_resource_info(self, resource_name: str) -> ResourceInfo | None:
+        """
+        supervisor function
+        get_resource_info()
+        Get a resource info
+        """
         resource = self.resources.get(resource_name)
         if not resource:
             logger.error(f"Resouce not found: {resource_name}")
         return resource
 
-    """
-    supervisor remote function()
-    get_providers()
-    Get all providers from a worker
-    """
-
     @staticmethod
     async def get_providers(worker_addr: str) -> list[ProviderInfo] | int:
+        """
+        supervisor remote function()
+        get_providers()
+        Get all providers from a worker
+        """
         async with grpc.aio.insecure_channel(worker_addr) as channel:
             stub = worker_pb2_grpc.WorkerStub(channel=channel)
             # TODO secure channel
@@ -174,13 +169,12 @@ class Supervisor(supervisor_pb2_grpc.SupervisorServicer):
                 )
                 return 0  # Failed to connect to worker
 
-    """
-    supervisor remote function
-    check_worker_health()
-    Check worker's connectivity by exchanging supervisor_addr and worker_addr
-    """
-
     async def check_worker_health(self, worker_addr: str):
+        """
+        supervisor remote function
+        check_worker_health()
+        Check worker's connectivity by exchanging supervisor_addr and worker_addr
+        """
         logger.debug(f"Check worker health: {worker_addr}")
         async with grpc.aio.insecure_channel(worker_addr) as channel:
             stub = worker_pb2_grpc.WorkerStub(channel=channel)
@@ -204,13 +198,12 @@ class Supervisor(supervisor_pb2_grpc.SupervisorServicer):
                     f"{response.worker_addr}, {ae}"
                 )
 
-    """
-    supervisor remote function
-    register_worker()
-    Accept worker report in.
-    """
-
     async def regiser_worker(self, worker_addr: str):
+        """
+        supervisor remote function
+        register_worker()
+        Accept worker report in.
+        """
         if worker_addr in self.unregistered_worker:
             logger.info(f"Accepted worker: {worker_addr}")
             async with grpc.aio.insecure_channel(worker_addr) as channel:
@@ -228,15 +221,14 @@ class Supervisor(supervisor_pb2_grpc.SupervisorServicer):
                         f"Failed to send register_accepted to worker: {worker_addr},{e}"
                     )
 
-    """
-    supervisor function
-    rebuild_resource_info()
-    rebuild resource info from infomation provided by worker.
-    maintain the resource_info since it does not store in database and worker.
-    call update if resources or providers have changes.
-    """
-
     async def rebuild_resource_info(self, resource_name: str) -> None:
+        """
+        supervisor function
+        rebuild_resource_info()
+        rebuild resource info from infomation provided by worker.
+        maintain the resource_info since it does not store in database and worker.
+        call update if resources or providers have changes.
+        """
         raw_worker_info_list = []
         raw_provider_info_list = []
         provide_info_count = 0

@@ -1,14 +1,17 @@
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import ConfigManager, SupervisorConfig
 from ..core import Supervisor
 from ..database.session import get_session
-from ..server import supervisor
 
-SupervisorDeps = Annotated[Supervisor, Depends(lambda: supervisor)]
+
+async def get_supervisor(request: Request) -> Supervisor:
+    return request.app.state.supervisor
+
+SupervisorDeps = Annotated[Supervisor, Depends(get_supervisor)]
 
 SessionDeps = Annotated[AsyncSession, Depends(get_session)]
 

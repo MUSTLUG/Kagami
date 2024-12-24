@@ -12,7 +12,6 @@ from .grpc import supervisor_pb2_grpc
 
 config = ConfigManager.get_configs()
 logger = logging.getLogger("uvicorn.error")
-supervisor = None
 
 
 @asynccontextmanager
@@ -28,24 +27,34 @@ async def lifespan(app: FastAPI):
     DatabaseEngine.init()
     await DatabaseEngine.check_and_create_database()
 
-    global supervisor
     supervisor = await Supervisor.load()
-
+    app.state.supervisor = supervisor
     # start gRPC server
     grpc_server = grpc.aio.server()
     supervisor_pb2_grpc.add_SupervisorServicer_to_server(supervisor, grpc_server)
     grpc_server.add_insecure_port(supervisor.supervisor_addr)  # TODO secure channel
     await grpc_server.start()
 
-    yield
-    await grpc_server.stop(0)
+    try:
+        yield
+    finally:
+        logger.info("Shutting down gRPC server...")
+        await grpc_server.stop(0)
+        logger.info("gRPC server shut down successfully.")
 
 
 kagami_server = FastAPI(lifespan=lifespan)
 
-from .routes import helper_router, resource_router, root_router  # noqa: E402
+# Lazy load routers
+from .routes import (  # noqa: E402
+    admin_router,
+    helper_router,
+    resource_router,
+    root_router,
+)
 
 # Include Router Area
 kagami_server.include_router(helper_router)
 kagami_server.include_router(resource_router)
 kagami_server.include_router(root_router)
+kagami_server.include_router(admin_router)
