@@ -22,7 +22,7 @@ class WorkerService:
         worker_addr: str,
     ):
         new_worker = Worker(worker_addr=worker_addr)
-        self._session.add_all(new_worker)
+        self._session.add(new_worker)
         await self._session.commit()
 
     async def delete_workerinfo(self, worker_addr: str):
