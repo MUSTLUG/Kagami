@@ -221,3 +221,4 @@ stats.html
 
 # database
 *.db
+kagami_worker/worker_config/registered

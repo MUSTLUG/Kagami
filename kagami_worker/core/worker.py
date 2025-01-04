@@ -108,9 +108,10 @@ class Worker(worker_pb2_grpc.WorkerServicer):
             self.registered = True
             message = "Worker Registered"
 
+        logger.info("Worker Registered.")
         # create registered note
         config = ConfigManager.get_configs()
-        registered_file = config.config_folder / "registered"
+        registered_file = Path(config.config_folder) / "registered"
         registered_file.touch()
 
         return worker_pb2.RegisterAck(message=message)

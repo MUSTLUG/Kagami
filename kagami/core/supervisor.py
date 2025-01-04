@@ -43,33 +43,33 @@ class Supervisor(supervisor_pb2_grpc.SupervisorServicer):
     @classmethod
     async def load(cls) -> "Supervisor":
         config = ConfigManager.get_configs()
+        raw_sup = cls(
+            supervisor_host=config.grpc_host,
+            supervisor_port=config.grpc_port,
+            worker_info_list=[],
+        )
         # Load the worker from database (if not init)
         async with session_generator() as session:
             worker_service = WorkerService(session=session)
             workers = await worker_service.list_all_worker()
 
-        raw_worker_info_list = []
+        logger.debug(f"Reconnect worker: {workers}")
+        raw_worker_info_list: list[WorkerInfo] = []
         for worker in workers:
-            # Reconnect workers
-            providers = await cls.get_providers(worker_addr=worker.worker_addr)
-            if providers != 1:
-                worker_status = WorkerStatus.CONNECTED
-                logger.info(f"Load worker {worker.worker_addr} successfully")
-            else:
-                worker_status = WorkerStatus.DISCONNECTED
-                logger.error(f"Fail to load worker: {worker.worker_addr}")
-            raw_worker_info_list.append(
-                WorkerInfo(
-                    worker_addr=worker.worker_addr,
-                    worker_status=worker_status,
-                    providers=providers if isinstance(providers, list) else [],
-                )
+            worker_info = await raw_sup.connect_and_build_worker_info(
+                worker_addr=worker.worker_addr
             )
-        return Supervisor(
-            supervisor_host=config.grpc_host,
-            supervisor_port=config.grpc_port,
-            worker_info_list=raw_worker_info_list,
-        )
+            if worker_info is not None:
+                raw_worker_info_list.append(worker_info)
+
+        if raw_worker_info_list:
+            raw_sup.registered_workers = {
+                w.worker_addr: w for w in raw_worker_info_list
+            }
+            logger.debug(f"Load worker: {raw_worker_info_list}")
+        else:
+            logger.debug("No worker to load.")
+        return raw_sup
 
     async def worker_report_in(self, request, context):
         """
@@ -105,6 +105,34 @@ class Supervisor(supervisor_pb2_grpc.SupervisorServicer):
         return supervisor_pb2.UpdateProviderStatusResponse(
             provider_id=provider_replica_id
         )
+
+    async def connect_and_build_worker_info(
+        self, worker_addr: str
+    ) -> WorkerInfo | None:
+        """
+        supervisor remote function
+        connect_and_build_worker_info
+        fetch workerinfo from worker, include provider info
+        """
+        providers = await self.get_providers(worker_addr)
+        if providers != 1:
+            worker_status = WorkerStatus.CONNECTED
+            logger.info(f"Load worker {worker_addr} successfully")
+        else:
+            worker_status = WorkerStatus.DISCONNECTED
+            logger.error(f"Fail to load worker: {worker_addr}")
+        return WorkerInfo(
+            worker_addr=worker_addr,
+            worker_status=worker_status,
+            providers=providers if isinstance(providers, list) else [],
+        )
+
+    async def save_worker_to_database(self, worker_addr: str):
+        async with session_generator() as session:
+            worker_service = WorkerService(session=session)
+            await worker_service.add_workerinfo(worker_addr=worker_addr)
+            logger.debug(f"Worker {worker_addr} recorded in database.")
+
     async def get_registered_worker(self) -> list[str]:
         return list(self.registered_workers.keys())
 
@@ -211,9 +239,20 @@ class Supervisor(supervisor_pb2_grpc.SupervisorServicer):
                 # TODO secure channel
                 request = worker_pb2.RegisterResponse(accepted=True)
                 try:
+
+
+                    worker_info = await self.connect_and_build_worker_info(
+                        worker_addr=worker_addr
+                    )
+                    if worker_info is not None:
+                        self.registered_workers[worker_addr] = worker_info
+                    else:
+                        logger.error(f"Failed to register worker: {worker_addr}")
+                        return
+                    self.unregistered_worker.pop()
                     # send register_accepted to worker with gRPC
                     response = await stub.register_accepted(request)
-                    self.unregistered_worker.pop()
+                    await self.save_worker_to_database(worker_addr=worker_addr)
                     logger.info(f"Accepted register from worker: {worker_addr}")
                     logger.debug(f"Response: {response}")
                 except grpc.RpcError as e:
