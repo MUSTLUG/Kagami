@@ -1,0 +1,5 @@
+# 本地初始 provider
+providers = ["ubuntu", "debian"]
+
+# NATS 连接地址
+# nats_url = "nats://nats-cluster.default.svc:4222"
