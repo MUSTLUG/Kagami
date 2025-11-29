@@ -28,6 +28,8 @@ pub enum ProviderConfig {
         name: String,
         kind: Option<ProviderKind>,
         upstream: Option<String>,
+        interval_secs: Option<u64>,
+        labels: Option<HashMap<String, String>>,
     },
 }
 
@@ -40,17 +42,23 @@ impl ProviderConfig {
                 kind: ProviderKind::Unknown,
                 upstream: String::new(),
                 status: ReplicaStatus::Init,
+                interval_secs: None,
+                labels: None,
             },
             ProviderConfig::Detailed {
                 name,
                 kind,
                 upstream,
+                interval_secs,
+                labels,
             } => ProviderReplica {
                 replica_id: Uuid::new_v4().to_string(),
                 name,
                 kind: kind.unwrap_or(ProviderKind::Unknown),
                 upstream: upstream.unwrap_or_default(),
                 status: ReplicaStatus::Init,
+                interval_secs,
+                labels,
             },
         }
     }
@@ -139,6 +147,25 @@ impl Handler<CommandEvent> for WorkerActor {
                 }
                 ctx.stop();
                 System::current().stop();
+            }
+            SupervisorCommand::AddReplica(cmd) => {
+                let replica_id = Uuid::new_v4().to_string();
+                let replica = ProviderReplica {
+                    replica_id: replica_id.clone(),
+                    name: cmd.name.clone(),
+                    kind: cmd.kind.clone(),
+                    upstream: cmd.upstream.clone(),
+                    status: ReplicaStatus::Init,
+                    interval_secs: cmd.interval_secs,
+                    labels: cmd.labels.clone(),
+                };
+                self.replicas.insert(replica_id.clone(), replica);
+                tracing::info!(
+                    "Added replica '{}' kind={:?} interval={:?}",
+                    cmd.name,
+                    cmd.kind,
+                    cmd.interval_secs
+                );
             }
             SupervisorCommand::Terminate => {
                 tracing::warn!("Terminate command received; shutting down worker");

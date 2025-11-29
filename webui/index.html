@@ -94,20 +94,21 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      padding: 6px 10px;
-      border-radius: 999px;
+      padding: 4px 10px;
+      border-radius: 12px;
       border: 1px solid var(--border);
       background: #0c172a;
       font-size: 13px;
       color: var(--muted);
       text-transform: lowercase;
+      line-height: 1.1;
+      height: 28px;
     }
     .pill.accent { border-color: rgba(14, 165, 233, 0.55); color: var(--text); background: rgba(14, 165, 233, 0.18); }
     .pill.good { color: #22c55e; background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.35); }
     .pill.warn { color: var(--warn); background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.35); }
     .pill.bad { color: var(--danger); background: rgba(244, 63, 94, 0.15); border-color: rgba(244, 63, 94, 0.35); }
-    .pill.tiny { padding: 4px 8px; font-size: 12px; }
-    .pill.tiny { min-width: 72px; justify-content: center; }
+    .pill.tiny { padding: 2px 10px; font-size: 12px; justify-content: center; min-width: 88px; text-align: center; font-weight: 600; letter-spacing: 0.02em; line-height: 1.1; height: 24px; }
     .btn {
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -125,6 +126,42 @@
     .btn.primary { background: linear-gradient(135deg, #0ea5e9, #22c55e); color: #04101f; border: none; }
     .btn.ghost { background: transparent; }
     .btn.danger { border-color: rgba(244, 63, 94, 0.4); color: #fee2e2; }
+    input, select {
+      width: 100%;
+      background: #0b1326;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: 'Space Grotesk', sans-serif;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+    }
+    input::placeholder { color: var(--muted); }
+    input:focus, select:focus {
+      outline: none;
+      border-color: rgba(14, 165, 233, 0.6);
+      box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.18);
+      background: #0d1a30;
+    }
+    select {
+      appearance: none;
+      background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+                        linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
+      background-size: 6px 6px, 6px 6px;
+      background-repeat: no-repeat;
+      padding-right: 32px;
+    }
+    .toast {
+      margin-top: 8px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(14, 165, 233, 0.4);
+      background: rgba(14, 165, 233, 0.12);
+      color: var(--text);
+    }
+    .toast.danger { border-color: rgba(244, 63, 94, 0.5); background: rgba(244, 63, 94, 0.12); }
     .data-table { width: 100%; border-collapse: collapse; }
     .data-table th, .data-table td { padding: 12px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
     .data-table th { color: var(--muted); font-weight: 500; font-size: 13px; letter-spacing: 0.02em; }
@@ -137,7 +174,8 @@
     .replica-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
     .replica-line { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed rgba(255, 255, 255, 0.04); }
     .replica-line:last-child { border-bottom: none; }
-    .action-col { display: flex; flex-direction: column; gap: 8px; min-width: 170px; }
+    .action-col { min-width: 170px; }
+    .action-stack { display: flex; flex-direction: column; gap: 8px; }
     .modal {
       position: fixed;
       inset: 0;
@@ -254,10 +292,12 @@
                 </div>
               </td>
               <td class="action-col">
-                <button v-if="workerStatus(w) === 'pending'" class="btn primary" @click="approve(w.worker_id)">Approve</button>
-                <button v-if="workerStatus(w) === 'pending'" class="btn danger ghost" @click="reject(w.worker_id)">Reject</button>
-                <button v-if="workerStatus(w) === 'approved'" class="btn danger ghost" @click="terminate(w.worker_id)">Terminate</button>
-                <span v-if="workerStatus(w) === 'rejected'" class="muted">Rejected</span>
+                <div class="action-stack">
+                  <button v-if="workerStatus(w) === 'pending'" class="btn primary" @click="approve(w.worker_id)">Approve</button>
+                  <button v-if="workerStatus(w) === 'pending'" class="btn danger ghost" @click="reject(w.worker_id)">Reject</button>
+                  <button v-if="workerStatus(w) === 'approved'" class="btn danger ghost" @click="terminate(w.worker_id)">Terminate</button>
+                  <span v-if="workerStatus(w) === 'rejected'" class="muted">Rejected</span>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -309,6 +349,9 @@
           </div>
           <button class="btn ghost" @click="closeWorker">Close</button>
         </div>
+        <div v-if="modalNotice.message" class="toast" :class="modalNotice.kind === 'danger' ? 'danger' : ''">
+          {{ modalNotice.message }}
+        </div>
 
         <div class="replica-list" style="margin-top:12px;">
           <div class="replica" v-for="r in activeWorker.replicas" :key="r.replica_id">
@@ -316,6 +359,7 @@
               <div>
                 <div class="title">{{ r.name }}</div>
                 <div class="muted mono">{{ r.kind }} · {{ r.replica_id }}</div>
+                <div class="muted">Upstream: {{ r.upstream }} <span v-if="r.interval_secs" class="pill tiny muted">every {{ r.interval_secs }}s</span></div>
               </div>
               <span class="pill tiny" :class="statusClass(r.status)">{{ r.status || 'unknown' }}</span>
             </div>
@@ -334,6 +378,39 @@
               >Remove</button>
             </div>
           </div>
+          <div class="replica" v-if="workerStatus(activeWorker) === 'approved'">
+            <div class="title" style="margin-bottom:6px;">Add replica</div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-bottom:8px;">
+              <label style="display:flex; flex-direction:column; gap:4px;">
+                <span class="muted">Name</span>
+                <input placeholder="repo-mirror" v-model="newReplica.name" />
+              </label>
+              <label style="display:flex; flex-direction:column; gap:4px;">
+                <span class="muted">Protocol</span>
+                <select v-model="newReplica.kind">
+                  <option value="git">git</option>
+                  <option value="rsync">rsync</option>
+                  <option value="http">http</option>
+                </select>
+              </label>
+              <label style="display:flex; flex-direction:column; gap:4px;">
+                <span class="muted">Interval (seconds, 0=manual)</span>
+                <input type="number" min="0" v-model.number="newReplica.interval_secs" />
+              </label>
+            </div>
+            <label style="display:flex; flex-direction:column; gap:4px; width:100%; margin-bottom:8px;">
+              <span class="muted">Upstream URL</span>
+              <input placeholder="https://example.com/repo.git" v-model="newReplica.upstream" />
+            </label>
+            <label style="display:flex; flex-direction:column; gap:4px; width:100%; margin-bottom:10px;">
+              <span class="muted">Labels (key=value, comma separated)</span>
+              <input placeholder="env=prod,region=us" v-model="newReplica.labels_text" />
+            </label>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+              <button class="btn ghost" @click="closeWorker">Cancel</button>
+              <button class="btn primary" @click="addReplica">Add Replica</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -349,9 +426,17 @@
         const resources = ref([]);
         const loading = ref({ overview: true, workers: true, resources: true });
         const banner = ref('');
+        const modalNotice = ref({ message: '', kind: 'info' });
         const lastUpdated = ref(null);
         const isBusy = computed(() => Object.values(loading.value).some(Boolean));
         const activeWorker = ref(null);
+        const newReplica = ref({
+          name: '',
+          kind: 'git',
+          upstream: '',
+          interval_secs: 300,
+          labels_text: '',
+        });
 
         const fetchJson = async (path, opts) => {
           const res = await fetch(path, opts);
@@ -380,13 +465,22 @@
           if (!res.ok) throw new Error(await res.text());
         };
 
-        const handleAction = async (label, fn) => {
+        const setNotice = (msg, kind = 'info') => {
+          if (activeWorker.value) {
+            modalNotice.value = { message: msg, kind };
+          } else {
+            banner.value = msg;
+          }
+        };
+
+        const handleAction = async (label, fn, onSuccess) => {
           try {
             await fn();
             await refreshAll();
+            if (onSuccess) setNotice(onSuccess);
           } catch (err) {
             console.error(err);
-            banner.value = `${label}: ${err.message || 'unexpected error'}`;
+            setNotice(`${label}: ${err.message || 'unexpected error'}`, 'danger');
           }
         };
 
@@ -406,31 +500,42 @@
           send(`${apiBase}/workers/${id}`, { method: 'DELETE' })
         );
 
-        const removeReplica = async (workerId, replicaId) => handleAction('Remove replica failed', () =>
-          send(`${apiBase}/workers/${workerId}/remove_replica`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ replica_id: replicaId }),
-          })
+        const removeReplica = async (workerId, replicaId) => handleAction(
+          'Remove replica failed',
+          () =>
+            send(`${apiBase}/workers/${workerId}/remove_replica`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ replica_id: replicaId }),
+            }),
+          'Replica removal triggered'
         );
 
-        const syncReplica = async (workerId, resourceName) => handleAction('Sync failed', () =>
-          send(`${apiBase}/workers/${workerId}/sync`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ resource: resourceName }),
-          })
+        const syncReplica = async (workerId, resourceName) => handleAction(
+          'Sync failed',
+          () =>
+            send(`${apiBase}/workers/${workerId}/sync`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ resource: resourceName }),
+            }),
+          'Sync triggered'
         );
 
         const refreshAll = async () => {
           banner.value = '';
+          modalNotice.value = { message: '', kind: 'info' };
           const results = await Promise.allSettled([loadOverview(), loadWorkers(), loadResources()]);
           const failed = results.find(r => r.status === 'rejected');
           if (failed) {
-            banner.value = failed.reason?.message || 'Failed to reach supervisor API';
+            setNotice(failed.reason?.message || 'Failed to reach supervisor API', 'danger');
             return;
           }
           lastUpdated.value = Math.floor(Date.now() / 1000);
+          if (activeWorker.value) {
+            const updated = workers.value.find(w => w.worker_id === activeWorker.value.worker_id);
+            activeWorker.value = updated || null;
+          }
         };
 
         const statusClass = (status) => {
@@ -450,9 +555,50 @@
 
         const openWorker = (worker) => {
           activeWorker.value = worker;
+          newReplica.value = {
+            name: '',
+            kind: 'git',
+            upstream: '',
+            interval_secs: 300,
+            labels_text: '',
+          };
         };
         const closeWorker = () => {
           activeWorker.value = null;
+        };
+
+        const parseLabels = (text) => {
+          if (!text.trim()) return undefined;
+          return text.split(',').reduce((acc, entry) => {
+            const [k, v] = entry.split('=').map(s => s?.trim()).filter(Boolean);
+            if (k && v !== undefined) acc[k] = v;
+            return acc;
+          }, {});
+        };
+
+        const addReplica = async () => {
+          if (!activeWorker.value) return;
+          const payload = {
+            name: newReplica.value.name.trim(),
+            kind: newReplica.value.kind,
+            upstream: newReplica.value.upstream.trim(),
+            interval_secs: Number(newReplica.value.interval_secs) || null,
+            labels: parseLabels(newReplica.value.labels_text),
+          };
+          if (!payload.name || !payload.upstream) {
+            banner.value = 'Name and upstream are required';
+            return;
+          }
+          await handleAction(
+            'Add replica failed',
+            () =>
+              send(`${apiBase}/workers/${activeWorker.value.worker_id}/add_replica`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+              }),
+            'Replica add command sent'
+          );
         };
 
         const formatAbsolute = (tsSeconds) => {
@@ -480,12 +626,15 @@
           banner,
           lastUpdated,
           isBusy,
+          modalNotice,
           activeWorker,
+          newReplica,
           approve,
           reject,
           terminate,
           removeReplica,
           syncReplica,
+          addReplica,
           refreshAll,
           statusClass,
           workerStatus,

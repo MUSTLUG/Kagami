@@ -20,6 +20,13 @@ pub enum WorkerStatus {
     Rejected,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum AuthConfig {
+    Basic { username: String, password: String },
+    Token { token: String },
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ReplicaStatus {
@@ -55,6 +62,8 @@ pub struct ProviderReplica {
     pub kind: ProviderKind,
     pub upstream: String,
     pub status: ReplicaStatus,
+    pub interval_secs: Option<u64>,
+    pub labels: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -85,11 +94,22 @@ pub struct ProviderStatusUpdate {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct AddReplicaCommand {
+    pub name: String,
+    pub kind: ProviderKind,
+    pub upstream: String,
+    pub interval_secs: Option<u64>,
+    pub auth: Option<AuthConfig>,
+    pub labels: Option<std::collections::HashMap<String, String>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum SupervisorCommand {
     SyncResource { resource: Option<String> },
     RemoveReplica { replica_id: String },
     Reject { reason: Option<String> },
+    AddReplica(AddReplicaCommand),
     Terminate,
     Ping,
 }

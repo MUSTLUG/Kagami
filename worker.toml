@@ -1,5 +1,25 @@
-# 本地初始 provider
-providers = ["ubuntu", "debian"]
+# 本地初始 providers（支持 name/kind/upstream/interval_secs/labels）
+[[providers]]
+name = "ubuntu-archive"
+kind = "http"
+upstream = "https://mirror.example.com/ubuntu/"
+interval_secs = 600
+labels.region = "us"
+labels.env = "prod"
 
-# NATS 连接地址
+[[providers]]
+name = "debian-security"
+kind = "rsync"
+upstream = "rsync://mirror.example.com/debian-security/"
+interval_secs = 900
+labels.region = "eu"
+
+[[providers]]
+name = "source-repo"
+kind = "git"
+upstream = "https://github.com/example/project.git"
+interval_secs = 300
+labels.env = "staging"
+
+# NATS 连接地址（缺省使用 nats://127.0.0.1:4222）
 # nats_url = "nats://nats-cluster.default.svc:4222"

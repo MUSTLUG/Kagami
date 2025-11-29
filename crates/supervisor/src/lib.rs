@@ -18,6 +18,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 pub struct SupervisorActor {
     nats: async_nats::Client,
@@ -61,6 +62,27 @@ pub struct HeartbeatEvent {
 pub struct SendCommand {
     pub worker_id: String,
     pub command: SupervisorCommand,
+}
+
+#[derive(Message)]
+#[rtype(result = "bool")]
+pub struct RemoveReplicaAction {
+    pub worker_id: String,
+    pub replica_id: String,
+}
+
+#[derive(Message)]
+#[rtype(result = "bool")]
+pub struct SyncResourceAction {
+    pub worker_id: String,
+    pub resource: Option<String>,
+}
+
+#[derive(Message)]
+#[rtype(result = "bool")]
+pub struct AddReplica {
+    pub worker_id: String,
+    pub command: common::AddReplicaCommand,
 }
 
 #[derive(Message)]
@@ -143,6 +165,15 @@ struct RemoveReplicaRequest {
 #[derive(serde::Deserialize)]
 struct SyncRequest {
     resource: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct AddReplicaRequest {
+    name: String,
+    kind: ProviderKind,
+    upstream: String,
+    interval_secs: Option<u64>,
+    labels: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(serde::Deserialize)]
@@ -443,6 +474,128 @@ impl Handler<RejectWorker> for SupervisorActor {
     }
 }
 
+impl Handler<AddReplica> for SupervisorActor {
+    type Result = bool;
+
+    fn handle(&mut self, msg: AddReplica, ctx: &mut Self::Context) -> Self::Result {
+        match self.workers.get(&msg.worker_id) {
+            Some(w) if w.status == WorkerStatus::Approved => w,
+            _ => return false,
+        };
+
+        // optimistically update view for immediacy
+        if let Some(record) = self.workers.get_mut(&msg.worker_id) {
+            let replica = ProviderReplica {
+                replica_id: Uuid::new_v4().to_string(),
+                name: msg.command.name.clone(),
+                kind: msg.command.kind.clone(),
+                upstream: msg.command.upstream.clone(),
+                status: ReplicaStatus::Init,
+                interval_secs: msg.command.interval_secs,
+                labels: msg.command.labels.clone(),
+            };
+            record
+                .replicas
+                .insert(replica.replica_id.clone(), replica.clone());
+        }
+
+        self.rebuild_resources();
+
+        let subject = worker_command_subject(&msg.worker_id);
+        let payload = match serde_json::to_vec(&SupervisorCommand::AddReplica(msg.command)) {
+            Ok(p) => Bytes::from(p),
+            Err(err) => {
+                error!("Failed to serialize add_replica command: {err}");
+                return false;
+            }
+        };
+        let client = self.nats.clone();
+        ctx.spawn(wrap_future(async move {
+            if let Err(err) = client.publish(subject, payload).await {
+                warn!("Failed to publish add_replica command: {err}");
+            }
+        }));
+
+        true
+    }
+}
+
+impl Handler<RemoveReplicaAction> for SupervisorActor {
+    type Result = bool;
+
+    fn handle(&mut self, msg: RemoveReplicaAction, _ctx: &mut Self::Context) -> Self::Result {
+        let worker = match self.workers.get_mut(&msg.worker_id) {
+            Some(w) if w.status == WorkerStatus::Approved => w,
+            _ => return false,
+        };
+
+        let existed = worker.replicas.remove(&msg.replica_id).is_some();
+        if existed {
+            self.rebuild_resources();
+            let subject = worker_command_subject(&msg.worker_id);
+            let payload = match serde_json::to_vec(&SupervisorCommand::RemoveReplica {
+                replica_id: msg.replica_id.clone(),
+            }) {
+                Ok(p) => Bytes::from(p),
+                Err(err) => {
+                    error!("Failed to serialize remove command: {err}");
+                    return false;
+                }
+            };
+            let client = self.nats.clone();
+            actix::spawn(async move {
+                if let Err(err) = client.publish(subject, payload).await {
+                    warn!("Failed to publish remove_replica command: {err}");
+                }
+            });
+        }
+        existed
+    }
+}
+
+impl Handler<SyncResourceAction> for SupervisorActor {
+    type Result = bool;
+
+    fn handle(&mut self, msg: SyncResourceAction, _ctx: &mut Self::Context) -> Self::Result {
+        match self.workers.get(&msg.worker_id) {
+            Some(w) if w.status == WorkerStatus::Approved => {}
+            _ => return false,
+        };
+
+        // Optimistically mark replicas syncing for immediate UI feedback.
+        if let Some(worker) = self.workers.get_mut(&msg.worker_id) {
+            for replica in worker.replicas.values_mut() {
+                if let Some(target) = &msg.resource {
+                    if &replica.name == target {
+                        replica.status = ReplicaStatus::Syncing;
+                    }
+                } else {
+                    replica.status = ReplicaStatus::Syncing;
+                }
+            }
+            self.rebuild_resources();
+        }
+
+        let subject = worker_command_subject(&msg.worker_id);
+        let payload = match serde_json::to_vec(&SupervisorCommand::SyncResource {
+            resource: msg.resource.clone(),
+        }) {
+            Ok(p) => Bytes::from(p),
+            Err(err) => {
+                error!("Failed to serialize sync command: {err}");
+                return false;
+            }
+        };
+        let client = self.nats.clone();
+        actix::spawn(async move {
+            if let Err(err) = client.publish(subject, payload).await {
+                warn!("Failed to publish sync command: {err}");
+            }
+        });
+        true
+    }
+}
+
 impl Handler<GetResources> for SupervisorActor {
     type Result = Vec<ResourceView>;
 
@@ -642,19 +795,53 @@ async fn reject_worker(
     }
 }
 
+async fn add_replica(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    body: web::Json<AddReplicaRequest>,
+) -> HttpResponse {
+    let worker_id = path.into_inner();
+    match state
+        .supervisor
+        .send(AddReplica {
+            worker_id: worker_id.clone(),
+            command: common::AddReplicaCommand {
+                name: body.name.clone(),
+                kind: body.kind.clone(),
+                upstream: body.upstream.clone(),
+                interval_secs: body.interval_secs,
+                auth: None,
+                labels: body.labels.clone(),
+            },
+        })
+        .await
+    {
+        Ok(true) => HttpResponse::Accepted().finish(),
+        Ok(false) => HttpResponse::BadRequest().body("Worker not found or not approved"),
+        Err(err) => HttpResponse::InternalServerError().body(format!("{err}")),
+    }
+}
+
 async fn remove_replica(
     state: web::Data<AppState>,
     path: web::Path<String>,
     body: web::Json<RemoveReplicaRequest>,
 ) -> HttpResponse {
     let worker_id = path.into_inner();
-    state.supervisor.do_send(SendCommand {
-        worker_id,
-        command: SupervisorCommand::RemoveReplica {
+    match state
+        .supervisor
+        .send(RemoveReplicaAction {
+            worker_id,
             replica_id: body.replica_id.clone(),
-        },
-    });
-    HttpResponse::Accepted().finish()
+        })
+        .await
+    {
+        Ok(true) => HttpResponse::Accepted().finish(),
+        Ok(false) => {
+            HttpResponse::BadRequest().body("Worker not found, not approved, or replica missing")
+        }
+        Err(err) => HttpResponse::InternalServerError().body(format!("{err}")),
+    }
 }
 
 async fn sync_resource(
@@ -663,13 +850,18 @@ async fn sync_resource(
     body: web::Json<SyncRequest>,
 ) -> HttpResponse {
     let worker_id = path.into_inner();
-    state.supervisor.do_send(SendCommand {
-        worker_id,
-        command: SupervisorCommand::SyncResource {
+    match state
+        .supervisor
+        .send(SyncResourceAction {
+            worker_id,
             resource: body.resource.clone(),
-        },
-    });
-    HttpResponse::Accepted().finish()
+        })
+        .await
+    {
+        Ok(true) => HttpResponse::Accepted().finish(),
+        Ok(false) => HttpResponse::BadRequest().body("Worker not found or not approved"),
+        Err(err) => HttpResponse::InternalServerError().body(format!("{err}")),
+    }
 }
 
 async fn ui_index(state: web::Data<AppState>, req: actix_web::HttpRequest) -> HttpResponse {
@@ -745,6 +937,7 @@ pub async fn start_supervisor_server(
             .route("/workers/{id}/approve", web::post().to(approve_worker))
             .route("/workers/{id}", web::delete().to(terminate_worker))
             .route("/workers/{id}/reject", web::post().to(reject_worker))
+            .route("/workers/{id}/add_replica", web::post().to(add_replica))
             .route(
                 "/workers/{id}/remove_replica",
                 web::post().to(remove_replica),
