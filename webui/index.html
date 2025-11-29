@@ -107,6 +107,7 @@
     .pill.warn { color: var(--warn); background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.35); }
     .pill.bad { color: var(--danger); background: rgba(244, 63, 94, 0.15); border-color: rgba(244, 63, 94, 0.35); }
     .pill.tiny { padding: 4px 8px; font-size: 12px; }
+    .pill.tiny { min-width: 72px; justify-content: center; }
     .btn {
       border: 1px solid var(--border);
       border-radius: 10px;
@@ -136,7 +137,30 @@
     .replica-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
     .replica-line { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed rgba(255, 255, 255, 0.04); }
     .replica-line:last-child { border-bottom: none; }
-    .action-col { display: flex; flex-direction: column; gap: 8px; }
+    .action-col { display: flex; flex-direction: column; gap: 8px; min-width: 170px; }
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 4, 12, 0.65);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      z-index: 10;
+    }
+    .modal-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      width: min(960px, 95vw);
+      max-height: 88vh;
+      overflow: auto;
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+    .modal-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
     @media (max-width: 800px) {
       .hero { flex-direction: column; align-items: flex-start; }
       .data-table th, .data-table td { font-size: 13px; }
@@ -173,6 +197,7 @@
         <div class="stat-meta">
           <span class="pill good">Approved {{ overview.workers_approved }}</span>
           <span class="pill warn">Pending {{ overview.workers_pending }}</span>
+          <span class="pill bad">Rejected {{ overview.workers_rejected || 0 }}</span>
         </div>
       </div>
       <div class="stat-card">
@@ -209,7 +234,7 @@
                 <div class="muted mono">Replicas: {{ w.replicas.length }}</div>
               </td>
               <td>
-                <span class="pill" :class="w.approved ? 'good' : 'warn'">{{ w.approved ? 'approved' : 'pending' }}</span>
+                <span class="pill" :class="statusClass(workerStatus(w))">{{ workerStatus(w) }}</span>
               </td>
               <td>
                 <div>{{ formatRelative(w.last_seen) }}</div>
@@ -217,24 +242,22 @@
               </td>
               <td>
                 <div class="replica-list">
-                  <div class="replica" v-for="r in w.replicas" :key="r.replica_id">
+                  <div class="replica">
                     <div class="replica-head">
                       <div>
-                        <div class="title">{{ r.name }}</div>
-                        <div class="muted mono">{{ r.kind }} · {{ r.replica_id }}</div>
+                        <div class="title">Replicas</div>
+                        <div class="muted mono">{{ w.replicas.length }} attached</div>
                       </div>
-                      <span class="pill tiny" :class="statusClass(r.status)">{{ r.status || 'unknown' }}</span>
-                    </div>
-                    <div class="replica-actions">
-                      <button class="btn ghost" @click="syncReplica(w.worker_id, r.name)">Sync</button>
-                      <button class="btn danger ghost" @click="removeReplica(w.worker_id, r.replica_id)">Remove</button>
+                      <button class="btn ghost" @click="openWorker(w)">View details</button>
                     </div>
                   </div>
                 </div>
               </td>
               <td class="action-col">
-                <button v-if="!w.approved" class="btn primary" @click="approve(w.worker_id)">Approve</button>
-                <button class="btn danger ghost" @click="terminate(w.worker_id)">Terminate</button>
+                <button v-if="workerStatus(w) === 'pending'" class="btn primary" @click="approve(w.worker_id)">Approve</button>
+                <button v-if="workerStatus(w) === 'pending'" class="btn danger ghost" @click="reject(w.worker_id)">Reject</button>
+                <button v-if="workerStatus(w) === 'approved'" class="btn danger ghost" @click="terminate(w.worker_id)">Terminate</button>
+                <span v-if="workerStatus(w) === 'rejected'" class="muted">Rejected</span>
               </td>
             </tr>
           </tbody>
@@ -272,6 +295,48 @@
         </table>
       </div>
     </section>
+
+    <div class="modal" v-if="activeWorker">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">Worker details</p>
+            <h3>{{ activeWorker.worker_id }}</h3>
+            <div class="chip-row">
+              <span class="pill" :class="statusClass(workerStatus(activeWorker))">{{ workerStatus(activeWorker) }}</span>
+              <span class="pill tiny muted">Replicas {{ activeWorker.replicas.length }}</span>
+            </div>
+          </div>
+          <button class="btn ghost" @click="closeWorker">Close</button>
+        </div>
+
+        <div class="replica-list" style="margin-top:12px;">
+          <div class="replica" v-for="r in activeWorker.replicas" :key="r.replica_id">
+            <div class="replica-head">
+              <div>
+                <div class="title">{{ r.name }}</div>
+                <div class="muted mono">{{ r.kind }} · {{ r.replica_id }}</div>
+              </div>
+              <span class="pill tiny" :class="statusClass(r.status)">{{ r.status || 'unknown' }}</span>
+            </div>
+            <div class="replica-actions">
+              <button
+                class="btn ghost"
+                :disabled="workerStatus(activeWorker) !== 'approved'"
+                title="Approve worker to enable sync"
+                @click="syncReplica(activeWorker.worker_id, r.name)"
+              >Sync</button>
+              <button
+                class="btn danger ghost"
+                :disabled="workerStatus(activeWorker) !== 'approved'"
+                title="Approve worker to enable remove"
+                @click="removeReplica(activeWorker.worker_id, r.replica_id)"
+              >Remove</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -279,13 +344,14 @@
     createApp({
       setup() {
         const apiBase = window.location.origin.replace(/\/+$/, '');
-        const overview = ref({ workers_total: 0, workers_approved: 0, workers_pending: 0, resources_total: 0 });
+        const overview = ref({ workers_total: 0, workers_approved: 0, workers_pending: 0, workers_rejected: 0, resources_total: 0 });
         const workers = ref([]);
         const resources = ref([]);
         const loading = ref({ overview: true, workers: true, resources: true });
         const banner = ref('');
         const lastUpdated = ref(null);
         const isBusy = computed(() => Object.values(loading.value).some(Boolean));
+        const activeWorker = ref(null);
 
         const fetchJson = async (path, opts) => {
           const res = await fetch(path, opts);
@@ -295,7 +361,10 @@
 
         const loadOverview = async () => {
           loading.value.overview = true;
-          try { overview.value = await fetchJson(`${apiBase}/overview`); } finally { loading.value.overview = false; }
+          try {
+            const data = await fetchJson(`${apiBase}/overview`);
+            overview.value = { workers_rejected: 0, ...data };
+          } finally { loading.value.overview = false; }
         };
         const loadWorkers = async () => {
           loading.value.workers = true;
@@ -323,6 +392,14 @@
 
         const approve = async (id) => handleAction('Approve failed', () =>
           send(`${apiBase}/workers/${id}/approve`, { method: 'POST' })
+        );
+
+        const reject = async (id) => handleAction('Reject failed', () =>
+          send(`${apiBase}/workers/${id}/reject`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: 'Rejected from console' }),
+          })
         );
 
         const terminate = async (id) => handleAction('Terminate failed', () =>
@@ -359,9 +436,23 @@
         const statusClass = (status) => {
           switch ((status || '').toLowerCase()) {
             case 'ready': case 'success': return 'good';
-            case 'syncing': case 'init': return 'warn';
+            case 'syncing': case 'init': case 'pending': return 'warn';
+            case 'approved': return 'good';
+            case 'rejected': return 'bad';
             default: return 'bad';
           }
+        };
+
+        const workerStatus = (worker) => {
+          const raw = worker?.status || (worker?.approved ? 'approved' : 'pending');
+          return (raw || '').toLowerCase();
+        };
+
+        const openWorker = (worker) => {
+          activeWorker.value = worker;
+        };
+        const closeWorker = () => {
+          activeWorker.value = null;
         };
 
         const formatAbsolute = (tsSeconds) => {
@@ -389,12 +480,17 @@
           banner,
           lastUpdated,
           isBusy,
+          activeWorker,
           approve,
+          reject,
           terminate,
           removeReplica,
           syncReplica,
           refreshAll,
           statusClass,
+          workerStatus,
+          openWorker,
+          closeWorker,
           formatAbsolute,
           formatRelative,
         };

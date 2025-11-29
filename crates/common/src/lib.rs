@@ -12,6 +12,14 @@ pub fn worker_command_subject(worker_id: &str) -> String {
     format!("kagami.worker.{worker_id}.cmd")
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkerStatus {
+    Pending,
+    Approved,
+    Rejected,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ReplicaStatus {
@@ -65,6 +73,7 @@ pub struct JoinRequest {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct JoinResponse {
     pub accepted: bool,
+    pub status: WorkerStatus,
     pub reason: Option<String>,
 }
 
@@ -80,6 +89,8 @@ pub struct ProviderStatusUpdate {
 pub enum SupervisorCommand {
     SyncResource { resource: Option<String> },
     RemoveReplica { replica_id: String },
+    Reject { reason: Option<String> },
+    Terminate,
     Ping,
 }
 

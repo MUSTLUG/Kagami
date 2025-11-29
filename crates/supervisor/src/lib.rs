@@ -9,7 +9,8 @@ use actix_web::{App, HttpResponse, HttpServer, http::header, web};
 use bytes::Bytes;
 use common::{
     HB_SUBJECT_PREFIX, Heartbeat, JOIN_SUBJECT, JoinRequest, JoinResponse, ProviderKind,
-    ProviderReplica, ReplicaStatus, ResourceStatus, SupervisorCommand, worker_command_subject,
+    ProviderReplica, ReplicaStatus, ResourceStatus, SupervisorCommand, WorkerStatus,
+    worker_command_subject,
 };
 use futures_util::stream::StreamExt;
 use sea_orm::DatabaseConnection;
@@ -29,7 +30,7 @@ pub struct SupervisorActor {
 struct WorkerRecord {
     replicas: HashMap<String, ProviderReplica>,
     last_seen: i64,
-    approved: bool,
+    status: WorkerStatus,
 }
 
 struct ResourceState {
@@ -75,6 +76,13 @@ pub struct TerminateWorker {
 }
 
 #[derive(Message)]
+#[rtype(result = "bool")]
+pub struct RejectWorker {
+    pub worker_id: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Message)]
 #[rtype(result = "Vec<WorkerView>")]
 pub struct GetWorkers;
 
@@ -107,6 +115,7 @@ pub struct ResourceView {
 pub struct WorkerView {
     pub worker_id: String,
     pub approved: bool,
+    pub status: WorkerStatus,
     pub last_seen: i64,
     pub replicas: Vec<ReplicaView>,
 }
@@ -116,6 +125,7 @@ pub struct OverviewView {
     pub workers_total: usize,
     pub workers_approved: usize,
     pub workers_pending: usize,
+    pub workers_rejected: usize,
     pub resources_total: usize,
 }
 
@@ -135,6 +145,11 @@ struct SyncRequest {
     resource: Option<String>,
 }
 
+#[derive(serde::Deserialize)]
+struct RejectRequest {
+    reason: Option<String>,
+}
+
 impl SupervisorActor {
     pub fn new(
         nats: async_nats::Client,
@@ -150,42 +165,55 @@ impl SupervisorActor {
         }
     }
 
-    fn upsert_worker(&mut self, worker_id: String, replicas: Vec<ProviderReplica>) {
-        let (approved, last_seen, persist_replicas) = {
+    fn upsert_worker(&mut self, worker_id: String, replicas: Vec<ProviderReplica>) -> WorkerStatus {
+        let now = chrono::Utc::now().timestamp();
+        let (status, persist_replicas) = {
             let record = self
                 .workers
                 .entry(worker_id.clone())
                 .or_insert(WorkerRecord {
                     replicas: HashMap::new(),
-                    last_seen: chrono::Utc::now().timestamp(),
-                    approved: self.auto_approve,
+                    last_seen: now,
+                    status: if self.auto_approve {
+                        WorkerStatus::Approved
+                    } else {
+                        WorkerStatus::Pending
+                    },
                 });
 
             record.replicas = replicas
                 .into_iter()
                 .map(|r| (r.replica_id.clone(), r))
                 .collect();
-            record.last_seen = chrono::Utc::now().timestamp();
-            record.approved = record.approved || self.auto_approve;
+            record.last_seen = now;
+
+            if record.status != WorkerStatus::Rejected && self.auto_approve {
+                record.status = WorkerStatus::Approved;
+            }
 
             (
-                record.approved,
-                record.last_seen,
+                record.status.clone(),
                 record.replicas.values().cloned().collect::<Vec<_>>(),
             )
         };
 
         // persist snapshot if database available
-        self.persist_snapshot(&worker_id, approved, last_seen, persist_replicas);
+        self.persist_snapshot(
+            &worker_id,
+            status == WorkerStatus::Approved,
+            now,
+            persist_replicas,
+        );
 
         self.rebuild_resources();
+        status
     }
 
     fn rebuild_resources(&mut self) {
         let mut resources: HashMap<String, Vec<ReplicaRef>> = HashMap::new();
 
         for (worker_id, worker) in &self.workers {
-            if !worker.approved {
+            if worker.status != WorkerStatus::Approved {
                 continue;
             }
             for replica in worker.replicas.values() {
@@ -270,14 +298,23 @@ impl Handler<JoinEvent> for SupervisorActor {
     type Result = ();
 
     fn handle(&mut self, msg: JoinEvent, ctx: &mut Self::Context) -> Self::Result {
-        let accepted = self.auto_approve;
-        self.upsert_worker(msg.request.worker_id.clone(), msg.request.replicas);
-        info!("Worker join request from {}", msg.request.worker_id);
+        let status = self.upsert_worker(msg.request.worker_id.clone(), msg.request.replicas);
+        let accepted = status == WorkerStatus::Approved;
+        let reason = match status {
+            WorkerStatus::Pending => Some("manual approval required".to_string()),
+            WorkerStatus::Rejected => Some("rejected by supervisor".to_string()),
+            WorkerStatus::Approved => None,
+        };
+        info!(
+            "Worker join request from {} (status {:?})",
+            msg.request.worker_id, status
+        );
 
         if let Some(reply) = msg.reply_to {
             let response = JoinResponse {
                 accepted,
-                reason: (!accepted).then_some("manual approval required".to_string()),
+                status: status.clone(),
+                reason,
             };
             let client = self.nats.clone();
             ctx.spawn(wrap_future(async move {
@@ -325,7 +362,7 @@ impl Handler<ApproveWorker> for SupervisorActor {
 
     fn handle(&mut self, msg: ApproveWorker, _ctx: &mut Self::Context) -> Self::Result {
         let (last_seen, replicas) = if let Some(worker) = self.workers.get_mut(&msg.worker_id) {
-            worker.approved = true;
+            worker.status = WorkerStatus::Approved;
             (
                 worker.last_seen,
                 worker.replicas.values().cloned().collect::<Vec<_>>(),
@@ -343,12 +380,24 @@ impl Handler<ApproveWorker> for SupervisorActor {
 impl Handler<TerminateWorker> for SupervisorActor {
     type Result = bool;
 
-    fn handle(&mut self, msg: TerminateWorker, _ctx: &mut Self::Context) -> Self::Result {
+    fn handle(&mut self, msg: TerminateWorker, ctx: &mut Self::Context) -> Self::Result {
+        let worker_id = msg.worker_id.clone();
+
+        // Notify worker to terminate before removing it from registry.
+        let client = self.nats.clone();
+        let subject = worker_command_subject(&worker_id);
+        ctx.spawn(wrap_future(async move {
+            let payload =
+                Bytes::from(serde_json::to_vec(&SupervisorCommand::Terminate).unwrap_or_default());
+            if let Err(err) = client.publish(subject, payload).await {
+                warn!("Failed to publish terminate command: {err}");
+            }
+        }));
+
         let removed = self.workers.remove(&msg.worker_id).is_some();
         if removed {
             if let Some(db) = &self.db {
                 let db = db.clone();
-                let worker_id = msg.worker_id.clone();
                 tokio::spawn(async move {
                     if let Err(err) = persistence::delete_worker(&db, &worker_id).await {
                         warn!("Failed to delete worker from DB: {err}");
@@ -358,6 +407,39 @@ impl Handler<TerminateWorker> for SupervisorActor {
             self.rebuild_resources();
         }
         removed
+    }
+}
+
+impl Handler<RejectWorker> for SupervisorActor {
+    type Result = bool;
+
+    fn handle(&mut self, msg: RejectWorker, ctx: &mut Self::Context) -> Self::Result {
+        let (last_seen, replicas) = if let Some(worker) = self.workers.get_mut(&msg.worker_id) {
+            worker.status = WorkerStatus::Rejected;
+            (
+                worker.last_seen,
+                worker.replicas.values().cloned().collect::<Vec<_>>(),
+            )
+        } else {
+            return false;
+        };
+
+        self.persist_snapshot(&msg.worker_id, false, last_seen, replicas);
+        self.rebuild_resources();
+
+        let client = self.nats.clone();
+        let subject = worker_command_subject(&msg.worker_id);
+        let command = SupervisorCommand::Reject {
+            reason: msg.reason.clone(),
+        };
+        ctx.spawn(wrap_future(async move {
+            let payload = Bytes::from(serde_json::to_vec(&command).unwrap());
+            if let Err(err) = client.publish(subject, payload).await {
+                warn!("Failed to publish reject command: {err}");
+            }
+        }));
+
+        true
     }
 }
 
@@ -395,7 +477,8 @@ impl Handler<GetWorkers> for SupervisorActor {
             .iter()
             .map(|(id, w)| WorkerView {
                 worker_id: id.clone(),
-                approved: w.approved,
+                approved: w.status == WorkerStatus::Approved,
+                status: w.status.clone(),
                 last_seen: w.last_seen,
                 replicas: w
                     .replicas
@@ -419,13 +502,23 @@ impl Handler<GetOverview> for SupervisorActor {
 
     fn handle(&mut self, _msg: GetOverview, _ctx: &mut Self::Context) -> Self::Result {
         let workers_total = self.workers.len();
-        let workers_approved = self.workers.values().filter(|w| w.approved).count();
-        let workers_pending = workers_total.saturating_sub(workers_approved);
+        let workers_approved = self
+            .workers
+            .values()
+            .filter(|w| w.status == WorkerStatus::Approved)
+            .count();
+        let workers_rejected = self
+            .workers
+            .values()
+            .filter(|w| w.status == WorkerStatus::Rejected)
+            .count();
+        let workers_pending = workers_total.saturating_sub(workers_approved + workers_rejected);
         let resources_total = self.resources.len();
         MessageResult(OverviewView {
             workers_total,
             workers_approved,
             workers_pending,
+            workers_rejected,
             resources_total,
         })
     }
@@ -525,6 +618,25 @@ async fn terminate_worker(state: web::Data<AppState>, path: web::Path<String>) -
         .await
     {
         Ok(true) => HttpResponse::NoContent().finish(),
+        Ok(false) => HttpResponse::NotFound().finish(),
+        Err(err) => HttpResponse::InternalServerError().body(format!("{err}")),
+    }
+}
+
+async fn reject_worker(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    body: web::Json<RejectRequest>,
+) -> HttpResponse {
+    match state
+        .supervisor
+        .send(RejectWorker {
+            worker_id: path.into_inner(),
+            reason: body.reason.clone(),
+        })
+        .await
+    {
+        Ok(true) => HttpResponse::Ok().finish(),
         Ok(false) => HttpResponse::NotFound().finish(),
         Err(err) => HttpResponse::InternalServerError().body(format!("{err}")),
     }
@@ -632,6 +744,7 @@ pub async fn start_supervisor_server(
             .route("/overview", web::get().to(overview))
             .route("/workers/{id}/approve", web::post().to(approve_worker))
             .route("/workers/{id}", web::delete().to(terminate_worker))
+            .route("/workers/{id}/reject", web::post().to(reject_worker))
             .route(
                 "/workers/{id}/remove_replica",
                 web::post().to(remove_replica),
