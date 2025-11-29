@@ -3,6 +3,7 @@ mod persistence;
 
 use actix::fut::wrap_future;
 use actix::{Actor, AsyncContext, Context, Handler, Message};
+use actix_web::{App, HttpResponse, HttpServer, web};
 use bytes::Bytes;
 use common::{
     HB_SUBJECT_PREFIX, Heartbeat, JOIN_SUBJECT, JoinRequest, JoinResponse, ProviderKind,
@@ -59,6 +60,18 @@ pub struct SendCommand {
 }
 
 #[derive(Message)]
+#[rtype(result = "bool")]
+pub struct ApproveWorker {
+    pub worker_id: String,
+}
+
+#[derive(Message)]
+#[rtype(result = "bool")]
+pub struct TerminateWorker {
+    pub worker_id: String,
+}
+
+#[derive(Message)]
 #[rtype(result = "Vec<ResourceView>")]
 pub struct GetResources;
 
@@ -77,6 +90,11 @@ pub struct ResourceView {
     pub name: String,
     pub status: ResourceStatus,
     pub replicas: Vec<ReplicaView>,
+}
+
+#[derive(Clone)]
+struct AppState {
+    supervisor: actix::Addr<SupervisorActor>,
 }
 
 impl SupervisorActor {
@@ -264,6 +282,47 @@ impl Handler<SendCommand> for SupervisorActor {
     }
 }
 
+impl Handler<ApproveWorker> for SupervisorActor {
+    type Result = bool;
+
+    fn handle(&mut self, msg: ApproveWorker, _ctx: &mut Self::Context) -> Self::Result {
+        let (last_seen, replicas) = if let Some(worker) = self.workers.get_mut(&msg.worker_id) {
+            worker.approved = true;
+            (
+                worker.last_seen,
+                worker.replicas.values().cloned().collect::<Vec<_>>(),
+            )
+        } else {
+            return false;
+        };
+
+        self.persist_snapshot(&msg.worker_id, true, last_seen, replicas);
+        self.rebuild_resources();
+        true
+    }
+}
+
+impl Handler<TerminateWorker> for SupervisorActor {
+    type Result = bool;
+
+    fn handle(&mut self, msg: TerminateWorker, _ctx: &mut Self::Context) -> Self::Result {
+        let removed = self.workers.remove(&msg.worker_id).is_some();
+        if removed {
+            if let Some(db) = &self.db {
+                let db = db.clone();
+                let worker_id = msg.worker_id.clone();
+                tokio::spawn(async move {
+                    if let Err(err) = persistence::delete_worker(&db, &worker_id).await {
+                        warn!("Failed to delete worker from DB: {err}");
+                    }
+                });
+            }
+            self.rebuild_resources();
+        }
+        removed
+    }
+}
+
 impl Handler<GetResources> for SupervisorActor {
     type Result = Vec<ResourceView>;
 
@@ -332,4 +391,76 @@ pub async fn run_supervisor(
 
 pub async fn init_database(database_url: &str) -> anyhow::Result<DatabaseConnection> {
     persistence::init(database_url).await
+}
+
+async fn list_resources(state: web::Data<AppState>) -> HttpResponse {
+    match state.supervisor.send(GetResources).await {
+        Ok(resources) => HttpResponse::Ok().json(resources),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Failed to fetch resources: {err}"))
+        }
+    }
+}
+
+async fn approve_worker(state: web::Data<AppState>, path: web::Path<String>) -> HttpResponse {
+    match state
+        .supervisor
+        .send(ApproveWorker {
+            worker_id: path.into_inner(),
+        })
+        .await
+    {
+        Ok(true) => HttpResponse::Ok().finish(),
+        Ok(false) => HttpResponse::NotFound().finish(),
+        Err(err) => HttpResponse::InternalServerError().body(format!("{err}")),
+    }
+}
+
+async fn terminate_worker(state: web::Data<AppState>, path: web::Path<String>) -> HttpResponse {
+    match state
+        .supervisor
+        .send(TerminateWorker {
+            worker_id: path.into_inner(),
+        })
+        .await
+    {
+        Ok(true) => HttpResponse::NoContent().finish(),
+        Ok(false) => HttpResponse::NotFound().finish(),
+        Err(err) => HttpResponse::InternalServerError().body(format!("{err}")),
+    }
+}
+
+pub async fn start_supervisor_server(
+    nats_url: String,
+    http_addr: String,
+    db_url: String,
+    auto_approve: bool,
+) -> anyhow::Result<()> {
+    let nats = async_nats::connect(nats_url).await?;
+    let db = init_database(&db_url).await?;
+    let supervisor_addr = run_supervisor(nats, auto_approve, Some(db)).await?;
+
+    let app_state = web::Data::new(AppState {
+        supervisor: supervisor_addr.clone(),
+    });
+
+    let server = HttpServer::new(move || {
+        App::new()
+            .app_data(app_state.clone())
+            .route("/resources", web::get().to(list_resources))
+            .route("/workers/{id}/approve", web::post().to(approve_worker))
+            .route("/workers/{id}", web::delete().to(terminate_worker))
+    })
+    .bind(http_addr.clone())?
+    .run();
+
+    let handle = server.handle();
+    tokio::select! {
+        res = server => res?,
+        _ = tokio::signal::ctrl_c() => {
+            handle.stop(true).await;
+        }
+    }
+
+    Ok(())
 }

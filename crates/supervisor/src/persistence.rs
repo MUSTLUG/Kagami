@@ -97,3 +97,15 @@ pub async fn sync_replicas(
 
     Ok(())
 }
+
+pub async fn delete_worker(db: &DatabaseConnection, worker_id: &str) -> anyhow::Result<()> {
+    replica::Entity::delete_many()
+        .filter(replica::Column::WorkerId.eq(worker_id.to_string()))
+        .exec(db)
+        .await?;
+    worker::Entity::delete_many()
+        .filter(worker::Column::WorkerId.eq(worker_id.to_string()))
+        .exec(db)
+        .await?;
+    Ok(())
+}
