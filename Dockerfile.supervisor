@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY worker.toml ./worker.toml
+COPY webui ./webui
 
 RUN cargo +nightly build --release -p supervisor
 
@@ -20,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 WORKDIR /app
 COPY --from=builder /app/target/release/supervisor /usr/local/bin/supervisor
 COPY --from=builder /app/worker.toml /app/worker.toml
+COPY --from=builder /app/webui /app/webui
 
 ENV SUPERVISOR_HTTP_ADDR=0.0.0.0:21000 \
     SUPERVISOR_DATABASE_URL=sqlite:///app/supervisor.db?mode=rwc \

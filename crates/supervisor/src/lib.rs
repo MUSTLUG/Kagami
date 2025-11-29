@@ -2,8 +2,10 @@ mod entity;
 mod persistence;
 
 use actix::fut::wrap_future;
+use actix::prelude::MessageResult;
 use actix::{Actor, AsyncContext, Context, Handler, Message};
-use actix_web::{App, HttpResponse, HttpServer, web};
+use actix_files::{Files, NamedFile};
+use actix_web::{App, HttpResponse, HttpServer, http::header, web};
 use bytes::Bytes;
 use common::{
     HB_SUBJECT_PREFIX, Heartbeat, JOIN_SUBJECT, JoinRequest, JoinResponse, ProviderKind,
@@ -13,6 +15,7 @@ use futures_util::stream::StreamExt;
 use sea_orm::DatabaseConnection;
 use serde::Serialize;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use tracing::{error, info, warn};
 
 pub struct SupervisorActor {
@@ -72,6 +75,14 @@ pub struct TerminateWorker {
 }
 
 #[derive(Message)]
+#[rtype(result = "Vec<WorkerView>")]
+pub struct GetWorkers;
+
+#[derive(Message)]
+#[rtype(result = "OverviewView")]
+pub struct GetOverview;
+
+#[derive(Message)]
 #[rtype(result = "Vec<ResourceView>")]
 pub struct GetResources;
 
@@ -92,9 +103,36 @@ pub struct ResourceView {
     pub replicas: Vec<ReplicaView>,
 }
 
+#[derive(Clone, Serialize)]
+pub struct WorkerView {
+    pub worker_id: String,
+    pub approved: bool,
+    pub last_seen: i64,
+    pub replicas: Vec<ReplicaView>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct OverviewView {
+    pub workers_total: usize,
+    pub workers_approved: usize,
+    pub workers_pending: usize,
+    pub resources_total: usize,
+}
+
 #[derive(Clone)]
 struct AppState {
     supervisor: actix::Addr<SupervisorActor>,
+    webui_dir: Option<PathBuf>,
+}
+
+#[derive(serde::Deserialize)]
+struct RemoveReplicaRequest {
+    replica_id: String,
+}
+
+#[derive(serde::Deserialize)]
+struct SyncRequest {
+    resource: Option<String>,
 }
 
 impl SupervisorActor {
@@ -349,6 +387,50 @@ impl Handler<GetResources> for SupervisorActor {
     }
 }
 
+impl Handler<GetWorkers> for SupervisorActor {
+    type Result = Vec<WorkerView>;
+
+    fn handle(&mut self, _msg: GetWorkers, _ctx: &mut Self::Context) -> Self::Result {
+        self.workers
+            .iter()
+            .map(|(id, w)| WorkerView {
+                worker_id: id.clone(),
+                approved: w.approved,
+                last_seen: w.last_seen,
+                replicas: w
+                    .replicas
+                    .values()
+                    .map(|r| ReplicaView {
+                        worker_id: id.clone(),
+                        replica_id: r.replica_id.clone(),
+                        name: r.name.clone(),
+                        kind: r.kind.clone(),
+                        upstream: r.upstream.clone(),
+                        status: r.status.clone(),
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+}
+
+impl Handler<GetOverview> for SupervisorActor {
+    type Result = MessageResult<GetOverview>;
+
+    fn handle(&mut self, _msg: GetOverview, _ctx: &mut Self::Context) -> Self::Result {
+        let workers_total = self.workers.len();
+        let workers_approved = self.workers.values().filter(|w| w.approved).count();
+        let workers_pending = workers_total.saturating_sub(workers_approved);
+        let resources_total = self.resources.len();
+        MessageResult(OverviewView {
+            workers_total,
+            workers_approved,
+            workers_pending,
+            resources_total,
+        })
+    }
+}
+
 pub async fn run_supervisor(
     nats: async_nats::Client,
     auto_approve: bool,
@@ -402,6 +484,24 @@ async fn list_resources(state: web::Data<AppState>) -> HttpResponse {
     }
 }
 
+async fn list_workers(state: web::Data<AppState>) -> HttpResponse {
+    match state.supervisor.send(GetWorkers).await {
+        Ok(workers) => HttpResponse::Ok().json(workers),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Failed to fetch workers: {err}"))
+        }
+    }
+}
+
+async fn overview(state: web::Data<AppState>) -> HttpResponse {
+    match state.supervisor.send(GetOverview).await {
+        Ok(data) => HttpResponse::Ok().json(data),
+        Err(err) => {
+            HttpResponse::InternalServerError().body(format!("Failed to fetch overview: {err}"))
+        }
+    }
+}
+
 async fn approve_worker(state: web::Data<AppState>, path: web::Path<String>) -> HttpResponse {
     match state
         .supervisor
@@ -430,6 +530,76 @@ async fn terminate_worker(state: web::Data<AppState>, path: web::Path<String>) -
     }
 }
 
+async fn remove_replica(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    body: web::Json<RemoveReplicaRequest>,
+) -> HttpResponse {
+    let worker_id = path.into_inner();
+    state.supervisor.do_send(SendCommand {
+        worker_id,
+        command: SupervisorCommand::RemoveReplica {
+            replica_id: body.replica_id.clone(),
+        },
+    });
+    HttpResponse::Accepted().finish()
+}
+
+async fn sync_resource(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    body: web::Json<SyncRequest>,
+) -> HttpResponse {
+    let worker_id = path.into_inner();
+    state.supervisor.do_send(SendCommand {
+        worker_id,
+        command: SupervisorCommand::SyncResource {
+            resource: body.resource.clone(),
+        },
+    });
+    HttpResponse::Accepted().finish()
+}
+
+async fn ui_index(state: web::Data<AppState>, req: actix_web::HttpRequest) -> HttpResponse {
+    if let Some(dir) = &state.webui_dir {
+        match NamedFile::open(dir.join("index.html")) {
+            Ok(file) => return file.into_response(&req),
+            Err(err) => return HttpResponse::InternalServerError().body(format!("{err}")),
+        }
+    }
+    HttpResponse::NotFound().finish()
+}
+
+fn resolve_webui_dir() -> Option<PathBuf> {
+    if let Ok(env_path) = std::env::var("SUPERVISOR_WEBUI_DIR") {
+        let p = PathBuf::from(env_path);
+        if p.join("index.html").exists() {
+            return Some(p);
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        let candidate = cwd.join("webui");
+        if candidate.join("index.html").exists() {
+            return Some(candidate);
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let mut check = exe.clone();
+        check.pop();
+        let candidate = check.join("webui");
+        if candidate.join("index.html").exists() {
+            return Some(candidate);
+        }
+        if check.pop() {
+            let candidate = check.join("webui");
+            if candidate.join("index.html").exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
 pub async fn start_supervisor_server(
     nats_url: String,
     http_addr: String,
@@ -439,17 +609,41 @@ pub async fn start_supervisor_server(
     let nats = async_nats::connect(nats_url).await?;
     let db = init_database(&db_url).await?;
     let supervisor_addr = run_supervisor(nats, auto_approve, Some(db)).await?;
+    let webui_dir = resolve_webui_dir();
 
     let app_state = web::Data::new(AppState {
         supervisor: supervisor_addr.clone(),
+        webui_dir: webui_dir.clone(),
     });
 
     let server = HttpServer::new(move || {
-        App::new()
+        let mut app = App::new()
             .app_data(app_state.clone())
+            .route(
+                "/",
+                web::get().to(|| async {
+                    HttpResponse::Found()
+                        .append_header((header::LOCATION, "/ui/"))
+                        .finish()
+                }),
+            )
             .route("/resources", web::get().to(list_resources))
+            .route("/workers", web::get().to(list_workers))
+            .route("/overview", web::get().to(overview))
             .route("/workers/{id}/approve", web::post().to(approve_worker))
             .route("/workers/{id}", web::delete().to(terminate_worker))
+            .route(
+                "/workers/{id}/remove_replica",
+                web::post().to(remove_replica),
+            )
+            .route("/workers/{id}/sync", web::post().to(sync_resource))
+            .route("/ui", web::get().to(ui_index));
+
+        if let Some(dir) = webui_dir.clone() {
+            app = app.service(Files::new("/ui/", dir).index_file("index.html"));
+        }
+
+        app
     })
     .bind(http_addr.clone())?
     .run();

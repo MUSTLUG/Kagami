@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kagami Supervisor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    :root {
+      --bg: #050a16;
+      --panel: #0b1326;
+      --card: #0f1c35;
+      --text: #e9edf6;
+      --muted: #8fa2bb;
+      --border: #1f2a3f;
+      --accent: #0ea5e9;
+      --accent-2: #22c55e;
+      --warn: #f59e0b;
+      --danger: #f43f5e;
+      --shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+      font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at 20% 20%, #0c1328, transparent 35%),
+                  radial-gradient(circle at 80% 0%, #081021, transparent 25%),
+                  var(--bg);
+      min-height: 100vh;
+      color: var(--text);
+    }
+    .page { max-width: 1200px; margin: 0 auto; padding: 32px 22px 48px; position: relative; }
+    h1 { margin: 6px 0 8px; font-size: 32px; letter-spacing: -0.4px; }
+    h3 { margin: 0; font-size: 18px; letter-spacing: -0.2px; }
+    p { margin: 6px 0; }
+    .lead { color: var(--muted); max-width: 640px; }
+    .label { font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .eyebrow { letter-spacing: 0.16em; text-transform: uppercase; font-size: 12px; color: var(--accent); }
+    .muted { color: var(--muted); }
+    .mono { font-family: 'IBM Plex Mono', monospace; }
+    .hero {
+      background: linear-gradient(135deg, rgba(15, 118, 110, 0.18), rgba(14, 165, 233, 0.12), rgba(34, 197, 94, 0.12));
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px 20px;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-end;
+      box-shadow: var(--shadow);
+    }
+    .hero-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .hero-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 160px; }
+    .caption { font-size: 12px; color: var(--muted); }
+    .banner {
+      margin: 16px 0;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(244, 63, 94, 0.08);
+      border: 1px solid rgba(244, 63, 94, 0.35);
+      color: #fecdd3;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 18px 0 8px; }
+    .stat-card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+    }
+    .stat-value { font-size: 36px; font-weight: 600; color: var(--accent); margin: 4px 0; letter-spacing: -1px; }
+    .stat-value.small { font-size: 20px; letter-spacing: -0.2px; }
+    .stat-meta { display: flex; gap: 8px; flex-wrap: wrap; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      margin-top: 16px;
+      box-shadow: var(--shadow);
+    }
+    .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+    .title { font-weight: 600; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #0c172a;
+      font-size: 13px;
+      color: var(--muted);
+      text-transform: lowercase;
+    }
+    .pill.accent { border-color: rgba(14, 165, 233, 0.55); color: var(--text); background: rgba(14, 165, 233, 0.18); }
+    .pill.good { color: #22c55e; background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.35); }
+    .pill.warn { color: var(--warn); background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.35); }
+    .pill.bad { color: var(--danger); background: rgba(244, 63, 94, 0.15); border-color: rgba(244, 63, 94, 0.35); }
+    .pill.tiny { padding: 4px 8px; font-size: 12px; }
+    .btn {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--text);
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.08s ease, border-color 0.1s ease, background 0.2s ease;
+      font-family: 'Space Grotesk', sans-serif;
+    }
+    .btn:hover { transform: translateY(-1px); border-color: rgba(255, 255, 255, 0.24); }
+    .btn:active { transform: translateY(0); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn.primary { background: linear-gradient(135deg, #0ea5e9, #22c55e); color: #04101f; border: none; }
+    .btn.ghost { background: transparent; }
+    .btn.danger { border-color: rgba(244, 63, 94, 0.4); color: #fee2e2; }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th, .data-table td { padding: 12px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+    .data-table th { color: var(--muted); font-weight: 500; font-size: 13px; letter-spacing: 0.02em; }
+    .data-table tr:hover { background: rgba(255, 255, 255, 0.02); }
+    .table-shell { overflow-x: auto; }
+    .replica-list { display: flex; flex-direction: column; gap: 10px; }
+    .replica-list.compact { gap: 6px; }
+    .replica { border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: #0d182c; }
+    .replica-head { display: flex; justify-content: space-between; gap: 10px; }
+    .replica-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .replica-line { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed rgba(255, 255, 255, 0.04); }
+    .replica-line:last-child { border-bottom: none; }
+    .action-col { display: flex; flex-direction: column; gap: 8px; }
+    @media (max-width: 800px) {
+      .hero { flex-direction: column; align-items: flex-start; }
+      .data-table th, .data-table td { font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="page">
+    <header class="hero">
+      <div>
+        <div class="eyebrow">Kagami Supervisor</div>
+        <h1>Control Room</h1>
+        <p class="lead">Actor-model distributed mirrors with live orchestration across workers.</p>
+        <div class="hero-meta">
+          <span class="pill accent">API {{ apiBase }}</span>
+          <span class="pill muted" v-if="lastUpdated">Updated {{ formatRelative(lastUpdated) }}</span>
+        </div>
+      </div>
+      <div class="hero-actions">
+        <button class="btn ghost" @click="refreshAll" :disabled="isBusy">Refresh Data</button>
+        <div class="caption" v-if="isBusy">Updating…</div>
+      </div>
+    </header>
+
+    <div v-if="banner" class="banner">
+      <div>{{ banner }}</div>
+      <button class="btn ghost" @click="refreshAll">Retry</button>
+    </div>
+
+    <section class="stat-grid">
+      <div class="stat-card">
+        <div class="label muted">Workers</div>
+        <div class="stat-value">{{ overview.workers_total }}</div>
+        <div class="stat-meta">
+          <span class="pill good">Approved {{ overview.workers_approved }}</span>
+          <span class="pill warn">Pending {{ overview.workers_pending }}</span>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="label muted">Resources</div>
+        <div class="stat-value">{{ overview.resources_total }}</div>
+        <div class="muted">Tracked replicas across the fleet.</div>
+      </div>
+      <div class="stat-card">
+        <div class="label muted">Heartbeat</div>
+        <div class="stat-value mono small">{{ lastUpdated ? formatAbsolute(lastUpdated) : '—' }}</div>
+        <div class="muted">Last data refresh</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow muted">Workers</p>
+          <h3>Fleet status</h3>
+          <p class="muted">Approve, terminate, and manage replicas per worker.</p>
+        </div>
+        <button class="btn primary" @click="refreshAll">Sync view</button>
+      </div>
+      <div class="muted" v-if="loading.workers">Loading workers...</div>
+      <div class="table-shell" v-else>
+        <table class="data-table">
+          <thead>
+            <tr><th>Worker</th><th>Approval</th><th>Last Seen</th><th>Replicas</th><th>Actions</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="w in workers" :key="w.worker_id">
+              <td>
+                <div class="title">{{ w.worker_id }}</div>
+                <div class="muted mono">Replicas: {{ w.replicas.length }}</div>
+              </td>
+              <td>
+                <span class="pill" :class="w.approved ? 'good' : 'warn'">{{ w.approved ? 'approved' : 'pending' }}</span>
+              </td>
+              <td>
+                <div>{{ formatRelative(w.last_seen) }}</div>
+                <div class="muted mono">{{ formatAbsolute(w.last_seen) }}</div>
+              </td>
+              <td>
+                <div class="replica-list">
+                  <div class="replica" v-for="r in w.replicas" :key="r.replica_id">
+                    <div class="replica-head">
+                      <div>
+                        <div class="title">{{ r.name }}</div>
+                        <div class="muted mono">{{ r.kind }} · {{ r.replica_id }}</div>
+                      </div>
+                      <span class="pill tiny" :class="statusClass(r.status)">{{ r.status || 'unknown' }}</span>
+                    </div>
+                    <div class="replica-actions">
+                      <button class="btn ghost" @click="syncReplica(w.worker_id, r.name)">Sync</button>
+                      <button class="btn danger ghost" @click="removeReplica(w.worker_id, r.replica_id)">Remove</button>
+                    </div>
+                  </div>
+                </div>
+              </td>
+              <td class="action-col">
+                <button v-if="!w.approved" class="btn primary" @click="approve(w.worker_id)">Approve</button>
+                <button class="btn danger ghost" @click="terminate(w.worker_id)">Terminate</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow muted">Resources</p>
+          <h3>Mirror coverage</h3>
+          <p class="muted">Status per resource and replicas across workers.</p>
+        </div>
+      </div>
+      <div class="muted" v-if="loading.resources">Loading resources...</div>
+      <div class="table-shell" v-else>
+        <table class="data-table">
+          <thead><tr><th>Name</th><th>Status</th><th>Replicas</th></tr></thead>
+          <tbody>
+            <tr v-for="r in resources" :key="r.name">
+              <td class="title">{{ r.name }}</td>
+              <td><span class="pill" :class="statusClass(r.status)">{{ r.status }}</span></td>
+              <td>
+                <div class="replica-list compact">
+                  <div class="replica-line" v-for="rep in r.replicas" :key="rep.replica_id">
+                    <span class="pill tiny muted">{{ rep.worker_id }}</span>
+                    <span class="muted mono">{{ rep.replica_id }}</span>
+                    <span class="pill tiny" :class="statusClass(rep.status)">{{ rep.status }}</span>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const { createApp, onMounted, ref, computed } = Vue;
+    createApp({
+      setup() {
+        const apiBase = window.location.origin.replace(/\/+$/, '');
+        const overview = ref({ workers_total: 0, workers_approved: 0, workers_pending: 0, resources_total: 0 });
+        const workers = ref([]);
+        const resources = ref([]);
+        const loading = ref({ overview: true, workers: true, resources: true });
+        const banner = ref('');
+        const lastUpdated = ref(null);
+        const isBusy = computed(() => Object.values(loading.value).some(Boolean));
+
+        const fetchJson = async (path, opts) => {
+          const res = await fetch(path, opts);
+          if (!res.ok) throw new Error(await res.text());
+          return res.json();
+        };
+
+        const loadOverview = async () => {
+          loading.value.overview = true;
+          try { overview.value = await fetchJson(`${apiBase}/overview`); } finally { loading.value.overview = false; }
+        };
+        const loadWorkers = async () => {
+          loading.value.workers = true;
+          try { workers.value = await fetchJson(`${apiBase}/workers`); } finally { loading.value.workers = false; }
+        };
+        const loadResources = async () => {
+          loading.value.resources = true;
+          try { resources.value = await fetchJson(`${apiBase}/resources`); } finally { loading.value.resources = false; }
+        };
+
+        const send = async (path, opts) => {
+          const res = await fetch(path, opts);
+          if (!res.ok) throw new Error(await res.text());
+        };
+
+        const handleAction = async (label, fn) => {
+          try {
+            await fn();
+            await refreshAll();
+          } catch (err) {
+            console.error(err);
+            banner.value = `${label}: ${err.message || 'unexpected error'}`;
+          }
+        };
+
+        const approve = async (id) => handleAction('Approve failed', () =>
+          send(`${apiBase}/workers/${id}/approve`, { method: 'POST' })
+        );
+
+        const terminate = async (id) => handleAction('Terminate failed', () =>
+          send(`${apiBase}/workers/${id}`, { method: 'DELETE' })
+        );
+
+        const removeReplica = async (workerId, replicaId) => handleAction('Remove replica failed', () =>
+          send(`${apiBase}/workers/${workerId}/remove_replica`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ replica_id: replicaId }),
+          })
+        );
+
+        const syncReplica = async (workerId, resourceName) => handleAction('Sync failed', () =>
+          send(`${apiBase}/workers/${workerId}/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ resource: resourceName }),
+          })
+        );
+
+        const refreshAll = async () => {
+          banner.value = '';
+          const results = await Promise.allSettled([loadOverview(), loadWorkers(), loadResources()]);
+          const failed = results.find(r => r.status === 'rejected');
+          if (failed) {
+            banner.value = failed.reason?.message || 'Failed to reach supervisor API';
+            return;
+          }
+          lastUpdated.value = Math.floor(Date.now() / 1000);
+        };
+
+        const statusClass = (status) => {
+          switch ((status || '').toLowerCase()) {
+            case 'ready': case 'success': return 'good';
+            case 'syncing': case 'init': return 'warn';
+            default: return 'bad';
+          }
+        };
+
+        const formatAbsolute = (tsSeconds) => {
+          if (!tsSeconds) return '-';
+          return new Date(tsSeconds * 1000).toLocaleString();
+        };
+
+        const formatRelative = (tsSeconds) => {
+          if (!tsSeconds) return '-';
+          const diff = Math.max(0, Math.floor(Date.now() / 1000) - tsSeconds);
+          if (diff < 60) return `${diff}s ago`;
+          if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+          if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+          return `${Math.floor(diff / 86400)}d ago`;
+        };
+
+        onMounted(refreshAll);
+
+        return {
+          apiBase,
+          overview,
+          workers,
+          resources,
+          loading,
+          banner,
+          lastUpdated,
+          isBusy,
+          approve,
+          terminate,
+          removeReplica,
+          syncReplica,
+          refreshAll,
+          statusClass,
+          formatAbsolute,
+          formatRelative,
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>

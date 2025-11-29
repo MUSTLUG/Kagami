@@ -98,6 +98,28 @@ enum DockerCommand {
         #[arg(long, default_value_t = true, action = ArgAction::Set)]
         jetstream: bool,
     },
+    Build {
+        #[command(subcommand)]
+        target: DockerBuildTarget,
+    },
+}
+
+#[derive(Subcommand)]
+enum DockerBuildTarget {
+    Worker {
+        #[arg(long, default_value = "kagami-worker:latest")]
+        tag: String,
+    },
+    Supervisor {
+        #[arg(long, default_value = "kagami-supervisor:latest")]
+        tag: String,
+    },
+    All {
+        #[arg(long, default_value = "kagami-worker:latest")]
+        worker_tag: String,
+        #[arg(long, default_value = "kagami-supervisor:latest")]
+        supervisor_tag: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -169,6 +191,17 @@ async fn main() -> anyhow::Result<()> {
                 monitor_port,
                 jetstream,
             } => docker_run_nats(&image, port, monitor_port, jetstream)?,
+            DockerCommand::Build { target } => match target {
+                DockerBuildTarget::Worker { tag } => docker_build_worker(&tag)?,
+                DockerBuildTarget::Supervisor { tag } => docker_build_supervisor(&tag)?,
+                DockerBuildTarget::All {
+                    worker_tag,
+                    supervisor_tag,
+                } => {
+                    docker_build_worker(&worker_tag)?;
+                    docker_build_supervisor(&supervisor_tag)?;
+                }
+            },
         },
         Commands::Supervisor { action } => match action {
             SupervisorAction::Approve { worker_id, api } => {
@@ -254,6 +287,18 @@ fn docker_run_nats(
         cmd.arg("-js");
     }
     run_cmd(cmd, "docker run nats")
+}
+
+fn docker_build_worker(tag: &str) -> anyhow::Result<()> {
+    let mut cmd = Command::new("docker");
+    cmd.args(["build", "-f", "Dockerfile.worker", "-t", tag, "."]);
+    run_cmd(cmd, "docker build worker")
+}
+
+fn docker_build_supervisor(tag: &str) -> anyhow::Result<()> {
+    let mut cmd = Command::new("docker");
+    cmd.args(["build", "-f", "Dockerfile.supervisor", "-t", tag, "."]);
+    run_cmd(cmd, "docker build supervisor")
 }
 
 fn run_cmd(mut cmd: Command, label: &str) -> anyhow::Result<()> {
