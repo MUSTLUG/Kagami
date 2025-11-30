@@ -1,7 +1,6 @@
 [workspace]
 members = ["crates/*"]
 resolver = "3"
-edition = "2024"
 
 [workspace.dependencies]
 tokio = { version = "1.45", features = ["rt-multi-thread", "macros"] }
