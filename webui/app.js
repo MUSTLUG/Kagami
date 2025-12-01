@@ -1,8 +1,14 @@
-const { createApp, onMounted, ref, computed } = Vue;
+const { createApp, onMounted, onBeforeUnmount, ref, computed, watch } = Vue;
 
 createApp({
   setup() {
     const apiBase = window.location.origin.replace(/\/+$/, '');
+    const pages = [
+      { key: 'overview', label: 'Overview' },
+      { key: 'workers', label: 'Workers' },
+      { key: 'mirrors', label: 'Mirrors' },
+    ];
+    const activePage = ref('overview');
     const overview = ref({
       workers_total: 0,
       workers_approved: 0,
@@ -18,6 +24,17 @@ createApp({
     const lastUpdated = ref(null);
     const isBusy = computed(() => Object.values(loading.value).some(Boolean));
     const activeWorker = ref(null);
+    const syncPageFromHash = () => {
+      const hash = window.location.hash.replace('#', '').toLowerCase();
+      if (pages.some((p) => p.key === hash)) {
+        activePage.value = hash;
+      }
+    };
+    const setPage = (pageKey) => {
+      if (pages.some((p) => p.key === pageKey)) {
+        activePage.value = pageKey;
+      }
+    };
 
     const generateTrafficSeries = () =>
       Array.from({ length: 24 }, (_, idx) => {
@@ -366,9 +383,29 @@ createApp({
       };
     });
 
-    onMounted(refreshAll);
+    watch(activePage, (page) => {
+      if (window.location.hash !== `#${page}`) {
+        window.location.hash = page;
+      }
+      if (page !== 'workers') {
+        activeWorker.value = null;
+      }
+    });
+
+    onMounted(() => {
+      syncPageFromHash();
+      window.addEventListener('hashchange', syncPageFromHash);
+      refreshAll();
+    });
+
+    onBeforeUnmount(() => {
+      window.removeEventListener('hashchange', syncPageFromHash);
+    });
 
     return {
+      pages,
+      activePage,
+      setPage,
       apiBase,
       overview,
       workers,

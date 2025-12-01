@@ -27,143 +27,157 @@
         <button class="btn ghost" @click="refreshAll" :disabled="isBusy">Refresh Data</button>
         <div class="caption" v-if="isBusy">Updating…</div>
       </div>
+
+      <nav class="page-nav">
+        <button
+          v-for="page in pages"
+          :key="page.key"
+          type="button"
+          class="nav-link"
+          :class="{ active: activePage === page.key }"
+          @click="setPage(page.key)"
+        >
+          {{ page.label }}
+        </button>
+      </nav>
     </header>
 
     <div v-if="banner" class="banner">
       <div>{{ banner }}</div>
       <button class="btn ghost" @click="refreshAll">Retry</button>
-    </div>
 
-    <section class="stat-grid">
-      <article class="stat-card">
-        <div class="label muted">Workers</div>
-        <div class="stat-value">{{ overview.workers_total }}</div>
-        <div class="stat-meta">
-          <span class="pill good">Approved {{ overview.workers_approved }}</span>
-          <span class="pill warn">Pending {{ overview.workers_pending }}</span>
-          <span class="pill bad">Rejected {{ overview.workers_rejected || 0 }}</span>
-        </div>
-      </article>
-      <article class="stat-card">
-        <div class="label muted">Resources</div>
-        <div class="stat-value">{{ overview.resources_total }}</div>
-        <p class="muted">Tracked replicas across the fleet.</p>
-      </article>
-      <article class="stat-card">
-        <div class="label muted">Heartbeat</div>
-        <div class="stat-value mono small">{{ lastUpdated ? formatAbsolute(lastUpdated) : '—' }}</div>
-        <p class="muted">Last data refresh</p>
-      </article>
-    </section>
+      <template v-if="activePage === 'overview'">
+        <section class="stat-grid">
+          <article class="stat-card">
+            <div class="label muted">Workers</div>
+            <div class="stat-value">{{ overview.workers_total }}</div>
+            <div class="stat-meta">
+              <span class="pill good">Approved {{ overview.workers_approved }}</span>
+              <span class="pill warn">Pending {{ overview.workers_pending }}</span>
+              <span class="pill bad">Rejected {{ overview.workers_rejected || 0 }}</span>
+            </div>
+          </article>
+          <article class="stat-card">
+            <div class="label muted">Resources</div>
+            <div class="stat-value">{{ overview.resources_total }}</div>
+            <p class="muted">Tracked replicas across the fleet.</p>
+          </article>
+          <article class="stat-card">
+            <div class="label muted">Heartbeat</div>
+            <div class="stat-value mono small">{{ lastUpdated ? formatAbsolute(lastUpdated) : '—' }}</div>
+            <p class="muted">Last data refresh</p>
+          </article>
+        </section>
 
-    <section class="panel telemetry-panel">
-      <div class="panel-head">
-        <div>
-          <p class="eyebrow muted">Telemetry</p>
-          <h3>Live operations</h3>
-          <p class="muted">Fleet-wide throughput, storage, and sync health.</p>
-        </div>
-        <div class="panel-actions">
-          <span class="pill muted" v-if="telemetry.last_sample_at">Sampled {{ formatRelative(telemetry.last_sample_at) }}</span>
-          <button class="btn ghost" @click="loadTelemetry" :disabled="loading.telemetry">Refresh telemetry</button>
-        </div>
-      </div>
-      <div class="muted loading-row" v-if="loading.telemetry">Collecting telemetry…</div>
-      <div class="telemetry-grid" v-else>
-        <article class="telemetry-card span-2 traffic-card">
-          <div class="card-head">
+        <section class="panel telemetry-panel">
+          <div class="panel-head">
             <div>
-              <p class="eyebrow muted">Traffic</p>
-              <h3>Event throughput</h3>
+              <p class="eyebrow muted">Telemetry</p>
+              <h3>Live operations</h3>
+              <p class="muted">Fleet-wide throughput, storage, and sync health.</p>
             </div>
-            <span class="pill" :class="trafficTrend >= 0 ? 'good' : 'bad'">
-              {{ trafficTrend >= 0 ? '+' : '' }}{{ trafficTrend.toFixed(1) }}%
-            </span>
+            <div class="panel-actions">
+              <span class="pill muted" v-if="telemetry.last_sample_at">Sampled {{ formatRelative(telemetry.last_sample_at) }}</span>
+              <button class="btn ghost" @click="loadTelemetry" :disabled="loading.telemetry">Refresh telemetry</button>
+            </div>
           </div>
-          <div class="stat-value">
-            {{ formatNumber(trafficCurrent) }}
-            <span class="stat-suffix">msgs/min</span>
-          </div>
-          <p class="muted">Avg {{ formatNumber(Math.round(trafficAverage)) }} msgs/min</p>
-          <div class="sparkline">
-            <svg viewBox="0 0 420 140" preserveAspectRatio="none">
-              <path class="sparkline-area" :d="trafficAreaPath"></path>
-              <path class="sparkline-line" :d="trafficLinePath"></path>
-            </svg>
-          </div>
-        </article>
+          <div class="muted loading-row" v-if="loading.telemetry">Collecting telemetry…</div>
+          <div class="telemetry-grid" v-else>
+            <article class="telemetry-card span-2 traffic-card">
+              <div class="card-head">
+                <div>
+                  <p class="eyebrow muted">Traffic</p>
+                  <h3>Event throughput</h3>
+                </div>
+                <span class="pill" :class="trafficTrend >= 0 ? 'good' : 'bad'">
+                  {{ trafficTrend >= 0 ? '+' : '' }}{{ trafficTrend.toFixed(1) }}%
+                </span>
+              </div>
+              <div class="stat-value">
+                {{ formatNumber(trafficCurrent) }}
+                <span class="stat-suffix">msgs/min</span>
+              </div>
+              <p class="muted">Avg {{ formatNumber(Math.round(trafficAverage)) }} msgs/min</p>
+              <div class="sparkline">
+                <svg viewBox="0 0 420 140" preserveAspectRatio="none">
+                  <path class="sparkline-area" :d="trafficAreaPath"></path>
+                  <path class="sparkline-line" :d="trafficLinePath"></path>
+                </svg>
+              </div>
+            </article>
 
-        <article class="telemetry-card">
-          <div class="card-head">
-            <div>
-              <p class="eyebrow muted">Sync health</p>
-              <h3>Replica success</h3>
-            </div>
-            <span class="pill good">{{ syncTotals.rate.toFixed(1) }}%</span>
-          </div>
-          <div class="split">
-            <div>
-              <div class="label muted">Success</div>
-              <div class="stat-value small">{{ formatNumber(syncTotals.success) }}</div>
-            </div>
-            <div>
-              <div class="label muted">Failure</div>
-              <div class="stat-value small">{{ formatNumber(syncTotals.failure) }}</div>
-            </div>
-          </div>
-          <div class="sync-meter">
-            <div class="sync-bar good" :style="{ width: syncTotals.rate + '%' }"></div>
-            <div class="sync-bar bad" :style="{ width: syncTotals.failureRate + '%' }"></div>
-          </div>
-        </article>
+            <article class="telemetry-card">
+              <div class="card-head">
+                <div>
+                  <p class="eyebrow muted">Sync health</p>
+                  <h3>Replica success</h3>
+                </div>
+                <span class="pill good">{{ syncTotals.rate.toFixed(1) }}%</span>
+              </div>
+              <div class="split">
+                <div>
+                  <div class="label muted">Success</div>
+                  <div class="stat-value small">{{ formatNumber(syncTotals.success) }}</div>
+                </div>
+                <div>
+                  <div class="label muted">Failure</div>
+                  <div class="stat-value small">{{ formatNumber(syncTotals.failure) }}</div>
+                </div>
+              </div>
+              <div class="sync-meter">
+                <div class="sync-bar good" :style="{ width: syncTotals.rate + '%' }"></div>
+                <div class="sync-bar bad" :style="{ width: syncTotals.failureRate + '%' }"></div>
+              </div>
+            </article>
 
-        <article class="telemetry-card disk-card">
-          <div class="card-head">
-            <div>
-              <p class="eyebrow muted">Storage</p>
-              <h3>Capacity headroom</h3>
-            </div>
-            <span class="pill muted">{{ formatNumber(diskStats.total) }} GB total</span>
-          </div>
-          <div class="disk-ring" :style="diskRingStyle">
-            <div class="disk-ring-core">
-              <div class="disk-ring-value">{{ diskStats.remainingPercent.toFixed(0) }}%</div>
-              <div class="caption">Free</div>
-            </div>
-          </div>
-          <p class="muted">Used {{ formatNumber(diskStats.used) }} GB · Remaining {{ formatNumber(diskStats.remaining) }} GB</p>
-        </article>
+            <article class="telemetry-card disk-card">
+              <div class="card-head">
+                <div>
+                  <p class="eyebrow muted">Storage</p>
+                  <h3>Capacity headroom</h3>
+                </div>
+                <span class="pill muted">{{ formatNumber(diskStats.total) }} GB total</span>
+              </div>
+              <div class="disk-ring" :style="diskRingStyle">
+                <div class="disk-ring-core">
+                  <div class="disk-ring-value">{{ diskStats.remainingPercent.toFixed(0) }}%</div>
+                  <div class="caption">Free</div>
+                </div>
+              </div>
+              <p class="muted">Used {{ formatNumber(diskStats.used) }} GB · Remaining {{ formatNumber(diskStats.remaining) }} GB</p>
+            </article>
 
-        <article class="telemetry-card metrics-card">
-          <div class="card-head">
-            <div>
-              <p class="eyebrow muted">Runtime</p>
-              <h3>Live metrics</h3>
-            </div>
+            <article class="telemetry-card metrics-card">
+              <div class="card-head">
+                <div>
+                  <p class="eyebrow muted">Runtime</p>
+                  <h3>Live metrics</h3>
+                </div>
+              </div>
+              <div class="metric-list">
+                <div class="metric-item">
+                  <div class="label muted">Message rate</div>
+                  <div class="stat-value small">{{ formatNumber(telemetry.message_rate) }}</div>
+                  <div class="caption">per minute</div>
+                </div>
+                <div class="metric-item">
+                  <div class="label muted">Concurrent jobs</div>
+                  <div class="stat-value small">{{ formatNumber(telemetry.concurrent_jobs) }}</div>
+                  <div class="caption">workers syncing</div>
+                </div>
+              </div>
+              <div class="latency-grid">
+                <span class="pill tiny">p50 {{ telemetry.latency_ms.p50.toFixed(0) }} ms</span>
+                <span class="pill tiny warn">p95 {{ telemetry.latency_ms.p95.toFixed(0) }} ms</span>
+                <span class="pill tiny bad">p99 {{ telemetry.latency_ms.p99.toFixed(0) }} ms</span>
+              </div>
+            </article>
           </div>
-          <div class="metric-list">
-            <div class="metric-item">
-              <div class="label muted">Message rate</div>
-              <div class="stat-value small">{{ formatNumber(telemetry.message_rate) }}</div>
-              <div class="caption">per minute</div>
-            </div>
-            <div class="metric-item">
-              <div class="label muted">Concurrent jobs</div>
-              <div class="stat-value small">{{ formatNumber(telemetry.concurrent_jobs) }}</div>
-              <div class="caption">workers syncing</div>
-            </div>
-          </div>
-          <div class="latency-grid">
-            <span class="pill tiny">p50 {{ telemetry.latency_ms.p50.toFixed(0) }} ms</span>
-            <span class="pill tiny warn">p95 {{ telemetry.latency_ms.p95.toFixed(0) }} ms</span>
-            <span class="pill tiny bad">p99 {{ telemetry.latency_ms.p99.toFixed(0) }} ms</span>
-          </div>
-        </article>
-      </div>
-    </section>
+        </section>
+      </template>
 
-    <section class="panel">
-      <div class="panel-head">
+      <template v-if="activePage === 'workers'">
+        <section class="panel">
         <div>
           <p class="eyebrow muted">Workers</p>
           <h3>Fleet status</h3>
@@ -217,38 +231,7 @@
       </div>
     </section>
 
-    <section class="panel">
-      <div class="panel-head">
-        <div>
-          <p class="eyebrow muted">Resources</p>
-          <h3>Mirror coverage</h3>
-          <p class="muted">Status per resource and replicas across workers.</p>
-        </div>
-      </div>
-      <div class="muted" v-if="loading.resources">Loading resources...</div>
-      <div class="table-shell" v-else>
-        <table class="data-table">
-          <thead><tr><th>Name</th><th>Status</th><th>Replicas</th></tr></thead>
-          <tbody>
-            <tr v-for="r in resources" :key="r.name">
-              <td class="title">{{ r.name }}</td>
-              <td><span class="pill" :class="statusClass(r.status)">{{ r.status }}</span></td>
-              <td>
-                <div class="replica-list compact">
-                  <div class="replica-line" v-for="rep in r.replicas" :key="rep.replica_id">
-                    <span class="pill tiny muted">{{ rep.worker_id }}</span>
-                    <span class="muted mono">{{ rep.replica_id }}</span>
-                    <span class="pill tiny" :class="statusClass(rep.status)">{{ rep.status }}</span>
-                  </div>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <div class="modal" v-if="activeWorker">
+      <div class="modal" v-if="activePage === 'workers' && activeWorker">
       <div class="modal-card">
         <div class="modal-head">
           <div>
@@ -325,7 +308,40 @@
           </div>
         </div>
       </div>
-    </div>
+    </template>
+
+    <template v-if="activePage === 'mirrors'">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow muted">Resources</p>
+            <h3>Mirror coverage</h3>
+            <p class="muted">Status per resource and replicas across workers.</p>
+          </div>
+        </div>
+        <div class="muted" v-if="loading.resources">Loading resources...</div>
+        <div class="table-shell" v-else>
+          <table class="data-table">
+            <thead><tr><th>Name</th><th>Status</th><th>Replicas</th></tr></thead>
+            <tbody>
+              <tr v-for="r in resources" :key="r.name">
+                <td class="title">{{ r.name }}</td>
+                <td><span class="pill" :class="statusClass(r.status)">{{ r.status }}</span></td>
+                <td>
+                  <div class="replica-list compact">
+                    <div class="replica-line" v-for="rep in r.replicas" :key="rep.replica_id">
+                      <span class="pill tiny muted">{{ rep.worker_id }}</span>
+                      <span class="muted mono">{{ rep.replica_id }}</span>
+                      <span class="pill tiny" :class="statusClass(rep.status)">{{ rep.status }}</span>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </template>
   </div>
 </body>
 </html>
