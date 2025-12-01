@@ -27,6 +27,7 @@ cargo run -p kagami-cli -- docker run supervisor \
 cargo run -p kagami-cli -- docker run worker \
   --image kagami-worker \
   --nats-url nats://host.docker.internal:4222 \
+  --data-dir /var/lib/kagami/worker \
   --port 8080 \
   --config ./worker.toml
 ```
@@ -50,6 +51,12 @@ labels.region = "us"
 # nats_url = "nats://nats:4222"
 ```
 Env overrides (prefix `KAGAMI_`): `KAGAMI_NATS_URL`, `KAGAMI_PROVIDERS` (JSON array), etc.
+- `data_dir` (required): where synced artifacts are written; worker will fail to start if omitted. Set via config, or env `KAGAMI_DATA_DIR`.
+- Sync behavior:
+  - `git`: `git clone --mirror` on first run, then `git fetch --all --prune`.
+  - `rsync`: `rsync -az --delete <upstream> <data_dir>/<name>/`.
+  - `http`: downloads the target URL into `<data_dir>/<name>/<filename or index.html>`.
+  - Make sure the corresponding tools (`git`, `rsync`) are available when using those kinds.
 
 ### Supervisor env
 - `KAGAMI_NATS_URL` (required): NATS address.

@@ -4627,6 +4627,7 @@ dependencies = [
  "config",
  "futures-util",
  "prometheus",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",

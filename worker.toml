@@ -1,23 +1,11 @@
 # 本地初始 providers（支持 name/kind/upstream/interval_secs/labels）
-[[providers]]
-name = "ubuntu-archive"
-kind = "http"
-upstream = "https://mirror.example.com/ubuntu/"
-interval_secs = 600
-labels.region = "us"
-labels.env = "prod"
-
-[[providers]]
-name = "debian-security"
-kind = "rsync"
-upstream = "rsync://mirror.example.com/debian-security/"
-interval_secs = 900
-labels.region = "eu"
+# 注意：如果是使用 Docker 部署，则此设置为容器内位址。建议保持默认值。
+data_dir = "./data"
 
 [[providers]]
 name = "source-repo"
 kind = "git"
-upstream = "https://github.com/example/project.git"
+upstream = "https://github.com/MUSTLUG/kagami.git"
 interval_secs = 300
 labels.env = "staging"
 

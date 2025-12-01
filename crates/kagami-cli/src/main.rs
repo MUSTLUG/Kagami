@@ -40,6 +40,8 @@ enum RunWhich {
         #[arg(long)]
         nats_url: Option<String>,
         #[arg(long)]
+        data_dir: Option<String>,
+        #[arg(long)]
         config: Option<PathBuf>,
     },
     Supervisor {
@@ -61,10 +63,14 @@ enum DockerWhich {
         image: String,
         #[arg(long, default_value = "nats://nats:4222")]
         nats_url: String,
+        #[arg(long, value_name = "HOST_PATH")]
+        data_dir: PathBuf,
         #[arg(long)]
         config: Option<PathBuf>,
         #[arg(long, default_value_t = 8080)]
         port: u16,
+        #[arg(long)]
+        network: Option<String>,
     },
     Supervisor {
         #[arg(long, default_value = "kagami-supervisor:latest")]
@@ -79,6 +85,8 @@ enum DockerWhich {
         auto_approve: bool,
         #[arg(long, default_value_t = 21000)]
         port: u16,
+        #[arg(long)]
+        network: Option<String>,
     },
 }
 
@@ -143,12 +151,19 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Run { which } => match which {
-            RunWhich::Worker { nats_url, config } => {
+            RunWhich::Worker {
+                nats_url,
+                data_dir,
+                config,
+            } => {
                 let settings_path = config.as_ref().map(|p| p.to_string_lossy().to_string());
                 let mut settings: WorkerSettings =
                     load_settings(settings_path.as_deref()).context("load worker settings")?;
                 if let Some(url) = nats_url {
                     settings.nats_url = Some(url);
+                }
+                if let Some(dir) = data_dir {
+                    settings.data_dir = dir;
                 }
                 run_worker(settings).await?;
             }
@@ -166,9 +181,18 @@ async fn main() -> anyhow::Result<()> {
                 DockerWhich::Worker {
                     image,
                     nats_url,
+                    data_dir,
                     config,
                     port,
-                } => docker_run_worker(&image, &nats_url, config.as_ref(), port)?,
+                    network,
+                } => docker_run_worker(
+                    &image,
+                    &nats_url,
+                    &data_dir,
+                    config.as_ref(),
+                    port,
+                    network.as_deref(),
+                )?,
                 DockerWhich::Supervisor {
                     image,
                     nats_url,
@@ -176,6 +200,7 @@ async fn main() -> anyhow::Result<()> {
                     db_url,
                     auto_approve,
                     port,
+                    network,
                 } => docker_run_supervisor(
                     &image,
                     &nats_url,
@@ -183,6 +208,7 @@ async fn main() -> anyhow::Result<()> {
                     &db_url,
                     auto_approve,
                     port,
+                    network.as_deref(),
                 )?,
             },
             DockerCommand::Nats {
@@ -231,12 +257,23 @@ async fn main() -> anyhow::Result<()> {
 fn docker_run_worker(
     image: &str,
     nats_url: &str,
+    data_dir: &PathBuf,
     config: Option<&PathBuf>,
     port: u16,
+    network: Option<&str>,
 ) -> anyhow::Result<()> {
     let mut cmd = Command::new("docker");
     cmd.args(["run", "-d", "--rm", "-p", &format!("{port}:8080")]);
+    if let Some(net) = network {
+        cmd.args(["--network", net]);
+    }
     cmd.args(["-e", &format!("KAGAMI_NATS_URL={nats_url}")]);
+    cmd.args(["-e", "KAGAMI_DATA_DIR=/data"]);
+    let host_data = data_dir.canonicalize().unwrap_or_else(|_| data_dir.clone());
+    let host_str = host_data
+        .to_str()
+        .ok_or_else(|| anyhow!("invalid data_dir path"))?;
+    cmd.args(["-v", &format!("{host_str}:/data")]);
     if let Some(cfg) = config {
         let host_path = cfg.canonicalize().context("canonicalize worker config")?;
         let host_str = host_path
@@ -255,9 +292,13 @@ fn docker_run_supervisor(
     db_url: &str,
     auto_approve: bool,
     port: u16,
+    network: Option<&str>,
 ) -> anyhow::Result<()> {
     let mut cmd = Command::new("docker");
     cmd.args(["run", "-d", "--rm", "-p", &format!("{port}:21000")]);
+    if let Some(net) = network {
+        cmd.args(["--network", net]);
+    }
     cmd.args(["-e", &format!("KAGAMI_NATS_URL={nats_url}")]);
     cmd.args(["-e", &format!("SUPERVISOR_HTTP_ADDR={http_addr}")]);
     cmd.args(["-e", &format!("SUPERVISOR_DATABASE_URL={db_url}")]);

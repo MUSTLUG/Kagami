@@ -1,3 +1,6 @@
+mod sync;
+
+use crate::sync::SyncManager;
 use actix::fut::wrap_future;
 use actix::{Actor, ActorContext, AsyncContext, Context, Handler, Message, System};
 use actix_web::{App, HttpResponse, HttpServer, web};
@@ -12,12 +15,14 @@ use prometheus::{Encoder, TextEncoder, gather};
 use serde::Deserialize;
 use std::{
     collections::HashMap,
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -73,9 +78,10 @@ struct CommandEvent {
 
 struct WorkerActor {
     worker_id: String,
-    replicas: HashMap<String, ProviderReplica>,
+    replicas: Arc<RwLock<HashMap<String, ProviderReplica>>>,
     nats: async_nats::Client,
     rejected: Arc<AtomicBool>,
+    sync_manager: SyncManager,
 }
 
 impl Actor for WorkerActor {
@@ -92,9 +98,14 @@ impl Actor for WorkerActor {
             }
             let client = act.nats.clone();
             let worker_id = act.worker_id.clone();
-            let replicas = act.replicas.values().cloned().collect::<Vec<_>>();
+            let replicas = act.replicas.clone();
 
             let fut = async move {
+                let replicas = {
+                    let guard = replicas.read().await;
+                    guard.values().cloned().collect::<Vec<_>>()
+                };
+
                 let hb = Heartbeat {
                     worker_id: worker_id.clone(),
                     time_stamp: chrono::Utc::now().timestamp(),
@@ -123,20 +134,19 @@ impl Handler<CommandEvent> for WorkerActor {
 
         match &command {
             SupervisorCommand::SyncResource { resource } => {
-                if let Some(target) = resource.clone() {
-                    for replica in self.replicas.values_mut() {
-                        if replica.name == target {
-                            replica.status = ReplicaStatus::Syncing;
-                        }
-                    }
-                } else {
-                    for replica in self.replicas.values_mut() {
-                        replica.status = ReplicaStatus::Syncing;
-                    }
-                }
+                let manager = self.sync_manager.clone();
+                let resource = resource.clone();
+                actix::spawn(async move {
+                    let started = manager.trigger_sync(resource).await;
+                    tracing::info!("Triggered sync tasks: {started}");
+                });
             }
             SupervisorCommand::RemoveReplica { replica_id } => {
-                self.replicas.remove(replica_id);
+                let manager = self.sync_manager.clone();
+                let replica_id = replica_id.clone();
+                actix::spawn(async move {
+                    manager.remove_replica(&replica_id).await;
+                });
             }
             SupervisorCommand::Reject { reason } => {
                 self.rejected.store(true, Ordering::SeqCst);
@@ -149,9 +159,9 @@ impl Handler<CommandEvent> for WorkerActor {
                 System::current().stop();
             }
             SupervisorCommand::AddReplica(cmd) => {
-                let replica_id = Uuid::new_v4().to_string();
+                let manager = self.sync_manager.clone();
                 let replica = ProviderReplica {
-                    replica_id: replica_id.clone(),
+                    replica_id: Uuid::new_v4().to_string(),
                     name: cmd.name.clone(),
                     kind: cmd.kind.clone(),
                     upstream: cmd.upstream.clone(),
@@ -159,7 +169,9 @@ impl Handler<CommandEvent> for WorkerActor {
                     interval_secs: cmd.interval_secs,
                     labels: cmd.labels.clone(),
                 };
-                self.replicas.insert(replica_id.clone(), replica);
+                actix::spawn(async move {
+                    manager.add_replica(replica).await;
+                });
                 tracing::info!(
                     "Added replica '{}' kind={:?} interval={:?}",
                     cmd.name,
@@ -214,12 +226,13 @@ async fn metrics() -> HttpResponse {
 pub struct Settings {
     pub providers: Vec<ProviderConfig>,
     pub nats_url: Option<String>,
+    pub data_dir: String,
 }
 
 async fn register_with_supervisor(
     nats: async_nats::Client,
     worker_id: String,
-    replicas: Vec<ProviderReplica>,
+    replicas: Arc<RwLock<HashMap<String, ProviderReplica>>>,
     rejected: Arc<AtomicBool>,
 ) {
     let mut attempt: u64 = 0;
@@ -228,9 +241,14 @@ async fn register_with_supervisor(
             break;
         }
 
+        let current_replicas = {
+            let guard = replicas.read().await;
+            guard.values().cloned().collect::<Vec<_>>()
+        };
+
         let join = JoinRequest {
             worker_id: worker_id.clone(),
-            replicas: replicas.clone(),
+            replicas: current_replicas,
         };
 
         match nats
@@ -279,7 +297,11 @@ pub fn load_settings(config_path: Option<&str>) -> anyhow::Result<Settings> {
     let path = config_path.unwrap_or("worker");
     builder = builder.add_source(config::File::with_name(path).required(false));
     builder = builder.add_source(config::Environment::with_prefix("KAGAMI"));
-    Ok(builder.build()?.try_deserialize()?)
+    let settings: Settings = builder.build()?.try_deserialize()?;
+    if settings.data_dir.trim().is_empty() {
+        anyhow::bail!("data_dir must be configured and non-empty");
+    }
+    Ok(settings)
 }
 
 pub async fn run_worker(settings: Settings) -> anyhow::Result<()> {
@@ -300,14 +322,21 @@ pub async fn run_worker(settings: Settings) -> anyhow::Result<()> {
         .cloned()
         .map(|r| (r.replica_id.clone(), r))
         .collect::<HashMap<_, _>>();
+    let replicas = Arc::new(RwLock::new(replicas_map));
 
     let rejected = Arc::new(AtomicBool::new(false));
+    let data_dir = PathBuf::from(&settings.data_dir);
+    let sync_manager = SyncManager::new(data_dir, replicas.clone());
+    sync_manager.bootstrap().await;
+    // Kick off an initial sync so fresh workers start pulling immediately.
+    sync_manager.trigger_sync(None).await;
 
     let addr = WorkerActor {
         worker_id: worker_id.clone(),
-        replicas: replicas_map,
+        replicas: replicas.clone(),
         nats: nats.clone(),
         rejected: rejected.clone(),
+        sync_manager: sync_manager.clone(),
     }
     .start();
 
@@ -316,7 +345,7 @@ pub async fn run_worker(settings: Settings) -> anyhow::Result<()> {
     tokio::spawn(register_with_supervisor(
         join_client,
         worker_id.clone(),
-        replicas_vec.clone(),
+        replicas.clone(),
         rejected_for_join,
     ));
 
