@@ -7,7 +7,8 @@ use actix_web::{App, HttpResponse, HttpServer, web};
 use bytes::Bytes;
 use common::{
     CommandAck, Heartbeat, JOIN_SUBJECT, JoinRequest, JoinResponse, ProviderKind, ProviderReplica,
-    ReplicaStatus, SupervisorCommand, WorkerStatus, heartbeat_subject, worker_command_subject,
+    ReplicaStatus, StorageReport, SupervisorCommand, WorkerStatus, heartbeat_subject,
+    worker_command_subject,
 };
 use config::Config;
 use futures_util::stream::StreamExt;
@@ -15,13 +16,14 @@ use prometheus::{Encoder, TextEncoder, gather};
 use serde::Deserialize;
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
+use sysinfo::{DiskExt, RefreshKind, System as SysinfoSystem, SystemExt};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -69,6 +71,35 @@ impl ProviderConfig {
     }
 }
 
+fn collect_storage_report(path: &Path) -> Option<StorageReport> {
+    let refresh = RefreshKind::new().with_disks_list().with_disks();
+    let mut system = SysinfoSystem::new_with_specifics(refresh);
+    system.refresh_disks_list();
+    system.refresh_disks();
+
+    let canonical = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut best_match: Option<(usize, StorageReport)> = None;
+
+    for disk in system.disks() {
+        let mount = disk.mount_point();
+        if canonical.starts_with(mount) {
+            let score = mount.components().count();
+            let total = disk.total_space();
+            let available = disk.available_space();
+            let used = total.saturating_sub(available);
+            let report = StorageReport {
+                total_bytes: total,
+                used_bytes: used,
+            };
+            if best_match.as_ref().map_or(true, |(len, _)| score > *len) {
+                best_match = Some((score, report));
+            }
+        }
+    }
+
+    best_match.map(|(_, report)| report)
+}
+
 #[derive(Message)]
 #[rtype(result = "()")]
 struct CommandEvent {
@@ -82,6 +113,7 @@ struct WorkerActor {
     nats: async_nats::Client,
     rejected: Arc<AtomicBool>,
     sync_manager: SyncManager,
+    data_dir: PathBuf,
 }
 
 impl Actor for WorkerActor {
@@ -99,6 +131,7 @@ impl Actor for WorkerActor {
             let client = act.nats.clone();
             let worker_id = act.worker_id.clone();
             let replicas = act.replicas.clone();
+            let data_dir = act.data_dir.clone();
 
             let fut = async move {
                 let replicas = {
@@ -106,10 +139,13 @@ impl Actor for WorkerActor {
                     guard.values().cloned().collect::<Vec<_>>()
                 };
 
+                let storage = collect_storage_report(&data_dir);
+
                 let hb = Heartbeat {
                     worker_id: worker_id.clone(),
                     time_stamp: chrono::Utc::now().timestamp(),
                     replicas,
+                    storage,
                 };
 
                 let subject = heartbeat_subject(&worker_id);
@@ -326,7 +362,7 @@ pub async fn run_worker(settings: Settings) -> anyhow::Result<()> {
 
     let rejected = Arc::new(AtomicBool::new(false));
     let data_dir = PathBuf::from(&settings.data_dir);
-    let sync_manager = SyncManager::new(data_dir, replicas.clone());
+    let sync_manager = SyncManager::new(data_dir.clone(), replicas.clone());
     sync_manager.bootstrap().await;
     // Kick off an initial sync so fresh workers start pulling immediately.
     sync_manager.trigger_sync(None).await;
@@ -337,6 +373,7 @@ pub async fn run_worker(settings: Settings) -> anyhow::Result<()> {
         nats: nats.clone(),
         rejected: rejected.clone(),
         sync_manager: sync_manager.clone(),
+        data_dir: data_dir.clone(),
     }
     .start();
 

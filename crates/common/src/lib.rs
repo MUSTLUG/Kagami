@@ -71,12 +71,20 @@ pub struct Heartbeat {
     pub worker_id: String,
     pub time_stamp: i64,
     pub replicas: Vec<ProviderReplica>,
+    #[serde(default)]
+    pub storage: Option<StorageReport>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct JoinRequest {
     pub worker_id: String,
     pub replicas: Vec<ProviderReplica>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq)]
+pub struct StorageReport {
+    pub total_bytes: u64,
+    pub used_bytes: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

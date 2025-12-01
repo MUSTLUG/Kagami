@@ -7,203 +7,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css" />
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-  <style>
-    :root {
-      --bg: #050a16;
-      --panel: #0b1326;
-      --card: #0f1c35;
-      --text: #e9edf6;
-      --muted: #8fa2bb;
-      --border: #1f2a3f;
-      --accent: #0ea5e9;
-      --accent-2: #22c55e;
-      --warn: #f59e0b;
-      --danger: #f43f5e;
-      --shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
-      font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      background: radial-gradient(circle at 20% 20%, #0c1328, transparent 35%),
-                  radial-gradient(circle at 80% 0%, #081021, transparent 25%),
-                  var(--bg);
-      min-height: 100vh;
-      color: var(--text);
-    }
-    .page { max-width: 1200px; margin: 0 auto; padding: 32px 22px 48px; position: relative; }
-    h1 { margin: 6px 0 8px; font-size: 32px; letter-spacing: -0.4px; }
-    h3 { margin: 0; font-size: 18px; letter-spacing: -0.2px; }
-    p { margin: 6px 0; }
-    .lead { color: var(--muted); max-width: 640px; }
-    .label { font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
-    .eyebrow { letter-spacing: 0.16em; text-transform: uppercase; font-size: 12px; color: var(--accent); }
-    .muted { color: var(--muted); }
-    .mono { font-family: 'IBM Plex Mono', monospace; }
-    .hero {
-      background: linear-gradient(135deg, rgba(15, 118, 110, 0.18), rgba(14, 165, 233, 0.12), rgba(34, 197, 94, 0.12));
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 18px 20px;
-      display: flex;
-      justify-content: space-between;
-      gap: 16px;
-      align-items: flex-end;
-      box-shadow: var(--shadow);
-    }
-    .hero-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-    .hero-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; min-width: 160px; }
-    .caption { font-size: 12px; color: var(--muted); }
-    .banner {
-      margin: 16px 0;
-      padding: 12px 14px;
-      border-radius: 12px;
-      background: rgba(244, 63, 94, 0.08);
-      border: 1px solid rgba(244, 63, 94, 0.35);
-      color: #fecdd3;
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: center;
-    }
-    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; margin: 18px 0 8px; }
-    .stat-card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px;
-      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
-    }
-    .stat-value { font-size: 36px; font-weight: 600; color: var(--accent); margin: 4px 0; letter-spacing: -1px; }
-    .stat-value.small { font-size: 20px; letter-spacing: -0.2px; }
-    .stat-meta { display: flex; gap: 8px; flex-wrap: wrap; }
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 16px;
-      margin-top: 16px;
-      box-shadow: var(--shadow);
-    }
-    .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
-    .title { font-weight: 600; }
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 10px;
-      border-radius: 12px;
-      border: 1px solid var(--border);
-      background: #0c172a;
-      font-size: 13px;
-      color: var(--muted);
-      text-transform: lowercase;
-      line-height: 1.1;
-      height: 28px;
-    }
-    .pill.accent { border-color: rgba(14, 165, 233, 0.55); color: var(--text); background: rgba(14, 165, 233, 0.18); }
-    .pill.good { color: #22c55e; background: rgba(34, 197, 94, 0.15); border-color: rgba(34, 197, 94, 0.35); }
-    .pill.warn { color: var(--warn); background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.35); }
-    .pill.bad { color: var(--danger); background: rgba(244, 63, 94, 0.15); border-color: rgba(244, 63, 94, 0.35); }
-    .pill.tiny { padding: 2px 10px; font-size: 12px; justify-content: center; min-width: 88px; text-align: center; font-weight: 600; letter-spacing: 0.02em; line-height: 1.1; height: 24px; }
-    .btn {
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      background: rgba(255, 255, 255, 0.04);
-      color: var(--text);
-      padding: 10px 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: transform 0.08s ease, border-color 0.1s ease, background 0.2s ease;
-      font-family: 'Space Grotesk', sans-serif;
-    }
-    .btn:hover { transform: translateY(-1px); border-color: rgba(255, 255, 255, 0.24); }
-    .btn:active { transform: translateY(0); }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .btn.primary { background: linear-gradient(135deg, #0ea5e9, #22c55e); color: #04101f; border: none; }
-    .btn.ghost { background: transparent; }
-    .btn.danger { border-color: rgba(244, 63, 94, 0.4); color: #fee2e2; }
-    input, select {
-      width: 100%;
-      background: #0b1326;
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 10px 12px;
-      font-size: 14px;
-      font-family: 'Space Grotesk', sans-serif;
-      transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-    }
-    input::placeholder { color: var(--muted); }
-    input:focus, select:focus {
-      outline: none;
-      border-color: rgba(14, 165, 233, 0.6);
-      box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.18);
-      background: #0d1a30;
-    }
-    select {
-      appearance: none;
-      background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
-                        linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-      background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
-      background-size: 6px 6px, 6px 6px;
-      background-repeat: no-repeat;
-      padding-right: 32px;
-    }
-    .toast {
-      margin-top: 8px;
-      padding: 10px 12px;
-      border-radius: 12px;
-      border: 1px solid rgba(14, 165, 233, 0.4);
-      background: rgba(14, 165, 233, 0.12);
-      color: var(--text);
-    }
-    .toast.danger { border-color: rgba(244, 63, 94, 0.5); background: rgba(244, 63, 94, 0.12); }
-    .data-table { width: 100%; border-collapse: collapse; }
-    .data-table th, .data-table td { padding: 12px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
-    .data-table th { color: var(--muted); font-weight: 500; font-size: 13px; letter-spacing: 0.02em; }
-    .data-table tr:hover { background: rgba(255, 255, 255, 0.02); }
-    .table-shell { overflow-x: auto; }
-    .replica-list { display: flex; flex-direction: column; gap: 10px; }
-    .replica-list.compact { gap: 6px; }
-    .replica { border: 1px solid var(--border); border-radius: 12px; padding: 10px; background: #0d182c; }
-    .replica-head { display: flex; justify-content: space-between; gap: 10px; }
-    .replica-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-    .replica-line { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed rgba(255, 255, 255, 0.04); }
-    .replica-line:last-child { border-bottom: none; }
-    .action-col { min-width: 170px; }
-    .action-stack { display: flex; flex-direction: column; gap: 8px; }
-    .modal {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 4, 12, 0.65);
-      backdrop-filter: blur(6px);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 18px;
-      z-index: 10;
-    }
-    .modal-card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      width: min(960px, 95vw);
-      max-height: 88vh;
-      overflow: auto;
-      box-shadow: var(--shadow);
-      padding: 16px;
-    }
-    .modal-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
-    @media (max-width: 800px) {
-      .hero { flex-direction: column; align-items: flex-start; }
-      .data-table th, .data-table td { font-size: 13px; }
-    }
-  </style>
+  <script defer src="./app.js"></script>
 </head>
 <body>
   <div id="app" class="page">
@@ -229,7 +35,7 @@
     </div>
 
     <section class="stat-grid">
-      <div class="stat-card">
+      <article class="stat-card">
         <div class="label muted">Workers</div>
         <div class="stat-value">{{ overview.workers_total }}</div>
         <div class="stat-meta">
@@ -237,16 +43,122 @@
           <span class="pill warn">Pending {{ overview.workers_pending }}</span>
           <span class="pill bad">Rejected {{ overview.workers_rejected || 0 }}</span>
         </div>
-      </div>
-      <div class="stat-card">
+      </article>
+      <article class="stat-card">
         <div class="label muted">Resources</div>
         <div class="stat-value">{{ overview.resources_total }}</div>
-        <div class="muted">Tracked replicas across the fleet.</div>
-      </div>
-      <div class="stat-card">
+        <p class="muted">Tracked replicas across the fleet.</p>
+      </article>
+      <article class="stat-card">
         <div class="label muted">Heartbeat</div>
         <div class="stat-value mono small">{{ lastUpdated ? formatAbsolute(lastUpdated) : '—' }}</div>
-        <div class="muted">Last data refresh</div>
+        <p class="muted">Last data refresh</p>
+      </article>
+    </section>
+
+    <section class="panel telemetry-panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow muted">Telemetry</p>
+          <h3>Live operations</h3>
+          <p class="muted">Fleet-wide throughput, storage, and sync health.</p>
+        </div>
+        <div class="panel-actions">
+          <span class="pill muted" v-if="telemetry.last_sample_at">Sampled {{ formatRelative(telemetry.last_sample_at) }}</span>
+          <button class="btn ghost" @click="loadTelemetry" :disabled="loading.telemetry">Refresh telemetry</button>
+        </div>
+      </div>
+      <div class="muted loading-row" v-if="loading.telemetry">Collecting telemetry…</div>
+      <div class="telemetry-grid" v-else>
+        <article class="telemetry-card span-2 traffic-card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow muted">Traffic</p>
+              <h3>Event throughput</h3>
+            </div>
+            <span class="pill" :class="trafficTrend >= 0 ? 'good' : 'bad'">
+              {{ trafficTrend >= 0 ? '+' : '' }}{{ trafficTrend.toFixed(1) }}%
+            </span>
+          </div>
+          <div class="stat-value">
+            {{ formatNumber(trafficCurrent) }}
+            <span class="stat-suffix">msgs/min</span>
+          </div>
+          <p class="muted">Avg {{ formatNumber(Math.round(trafficAverage)) }} msgs/min</p>
+          <div class="sparkline">
+            <svg viewBox="0 0 420 140" preserveAspectRatio="none">
+              <path class="sparkline-area" :d="trafficAreaPath"></path>
+              <path class="sparkline-line" :d="trafficLinePath"></path>
+            </svg>
+          </div>
+        </article>
+
+        <article class="telemetry-card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow muted">Sync health</p>
+              <h3>Replica success</h3>
+            </div>
+            <span class="pill good">{{ syncTotals.rate.toFixed(1) }}%</span>
+          </div>
+          <div class="split">
+            <div>
+              <div class="label muted">Success</div>
+              <div class="stat-value small">{{ formatNumber(syncTotals.success) }}</div>
+            </div>
+            <div>
+              <div class="label muted">Failure</div>
+              <div class="stat-value small">{{ formatNumber(syncTotals.failure) }}</div>
+            </div>
+          </div>
+          <div class="sync-meter">
+            <div class="sync-bar good" :style="{ width: syncTotals.rate + '%' }"></div>
+            <div class="sync-bar bad" :style="{ width: syncTotals.failureRate + '%' }"></div>
+          </div>
+        </article>
+
+        <article class="telemetry-card disk-card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow muted">Storage</p>
+              <h3>Capacity headroom</h3>
+            </div>
+            <span class="pill muted">{{ formatNumber(diskStats.total) }} GB total</span>
+          </div>
+          <div class="disk-ring" :style="diskRingStyle">
+            <div class="disk-ring-core">
+              <div class="disk-ring-value">{{ diskStats.remainingPercent.toFixed(0) }}%</div>
+              <div class="caption">Free</div>
+            </div>
+          </div>
+          <p class="muted">Used {{ formatNumber(diskStats.used) }} GB · Remaining {{ formatNumber(diskStats.remaining) }} GB</p>
+        </article>
+
+        <article class="telemetry-card metrics-card">
+          <div class="card-head">
+            <div>
+              <p class="eyebrow muted">Runtime</p>
+              <h3>Live metrics</h3>
+            </div>
+          </div>
+          <div class="metric-list">
+            <div class="metric-item">
+              <div class="label muted">Message rate</div>
+              <div class="stat-value small">{{ formatNumber(telemetry.message_rate) }}</div>
+              <div class="caption">per minute</div>
+            </div>
+            <div class="metric-item">
+              <div class="label muted">Concurrent jobs</div>
+              <div class="stat-value small">{{ formatNumber(telemetry.concurrent_jobs) }}</div>
+              <div class="caption">workers syncing</div>
+            </div>
+          </div>
+          <div class="latency-grid">
+            <span class="pill tiny">p50 {{ telemetry.latency_ms.p50.toFixed(0) }} ms</span>
+            <span class="pill tiny warn">p95 {{ telemetry.latency_ms.p95.toFixed(0) }} ms</span>
+            <span class="pill tiny bad">p99 {{ telemetry.latency_ms.p99.toFixed(0) }} ms</span>
+          </div>
+        </article>
       </div>
     </section>
 
@@ -353,7 +265,7 @@
           {{ modalNotice.message }}
         </div>
 
-        <div class="replica-list" style="margin-top:12px;">
+  <div class="replica-list modal-replica-list">
           <div class="replica" v-for="r in activeWorker.replicas" :key="r.replica_id">
             <div class="replica-head">
               <div>
@@ -379,13 +291,13 @@
             </div>
           </div>
           <div class="replica" v-if="workerStatus(activeWorker) === 'approved'">
-            <div class="title" style="margin-bottom:6px;">Add replica</div>
-            <div style="display:grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin-bottom:8px;">
-              <label style="display:flex; flex-direction:column; gap:4px;">
+            <div class="title replica-add-title">Add replica</div>
+            <div class="form-grid">
+              <label class="form-field">
                 <span class="muted">Name</span>
                 <input placeholder="repo-mirror" v-model="newReplica.name" />
               </label>
-              <label style="display:flex; flex-direction:column; gap:4px;">
+              <label class="form-field">
                 <span class="muted">Protocol</span>
                 <select v-model="newReplica.kind">
                   <option value="git">git</option>
@@ -393,20 +305,20 @@
                   <option value="http">http</option>
                 </select>
               </label>
-              <label style="display:flex; flex-direction:column; gap:4px;">
+              <label class="form-field">
                 <span class="muted">Interval (seconds, 0=manual)</span>
                 <input type="number" min="0" v-model.number="newReplica.interval_secs" />
               </label>
             </div>
-            <label style="display:flex; flex-direction:column; gap:4px; width:100%; margin-bottom:8px;">
+            <label class="form-field full">
               <span class="muted">Upstream URL</span>
               <input placeholder="https://example.com/repo.git" v-model="newReplica.upstream" />
             </label>
-            <label style="display:flex; flex-direction:column; gap:4px; width:100%; margin-bottom:10px;">
+            <label class="form-field full">
               <span class="muted">Labels (key=value, comma separated)</span>
               <input placeholder="env=prod,region=us" v-model="newReplica.labels_text" />
             </label>
-            <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <div class="form-actions">
               <button class="btn ghost" @click="closeWorker">Cancel</button>
               <button class="btn primary" @click="addReplica">Add Replica</button>
             </div>
@@ -415,236 +327,5 @@
       </div>
     </div>
   </div>
-
-  <script>
-    const { createApp, onMounted, ref, computed } = Vue;
-    createApp({
-      setup() {
-        const apiBase = window.location.origin.replace(/\/+$/, '');
-        const overview = ref({ workers_total: 0, workers_approved: 0, workers_pending: 0, workers_rejected: 0, resources_total: 0 });
-        const workers = ref([]);
-        const resources = ref([]);
-        const loading = ref({ overview: true, workers: true, resources: true });
-        const banner = ref('');
-        const modalNotice = ref({ message: '', kind: 'info' });
-        const lastUpdated = ref(null);
-        const isBusy = computed(() => Object.values(loading.value).some(Boolean));
-        const activeWorker = ref(null);
-        const newReplica = ref({
-          name: '',
-          kind: 'git',
-          upstream: '',
-          interval_secs: 300,
-          labels_text: '',
-        });
-
-        const fetchJson = async (path, opts) => {
-          const res = await fetch(path, opts);
-          if (!res.ok) throw new Error(await res.text());
-          return res.json();
-        };
-
-        const loadOverview = async () => {
-          loading.value.overview = true;
-          try {
-            const data = await fetchJson(`${apiBase}/overview`);
-            overview.value = { workers_rejected: 0, ...data };
-          } finally { loading.value.overview = false; }
-        };
-        const loadWorkers = async () => {
-          loading.value.workers = true;
-          try { workers.value = await fetchJson(`${apiBase}/workers`); } finally { loading.value.workers = false; }
-        };
-        const loadResources = async () => {
-          loading.value.resources = true;
-          try { resources.value = await fetchJson(`${apiBase}/resources`); } finally { loading.value.resources = false; }
-        };
-
-        const send = async (path, opts) => {
-          const res = await fetch(path, opts);
-          if (!res.ok) throw new Error(await res.text());
-        };
-
-        const setNotice = (msg, kind = 'info') => {
-          if (activeWorker.value) {
-            modalNotice.value = { message: msg, kind };
-          } else {
-            banner.value = msg;
-          }
-        };
-
-        const handleAction = async (label, fn, onSuccess) => {
-          try {
-            await fn();
-            await refreshAll();
-            if (onSuccess) setNotice(onSuccess);
-          } catch (err) {
-            console.error(err);
-            setNotice(`${label}: ${err.message || 'unexpected error'}`, 'danger');
-          }
-        };
-
-        const approve = async (id) => handleAction('Approve failed', () =>
-          send(`${apiBase}/workers/${id}/approve`, { method: 'POST' })
-        );
-
-        const reject = async (id) => handleAction('Reject failed', () =>
-          send(`${apiBase}/workers/${id}/reject`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reason: 'Rejected from console' }),
-          })
-        );
-
-        const terminate = async (id) => handleAction('Terminate failed', () =>
-          send(`${apiBase}/workers/${id}`, { method: 'DELETE' })
-        );
-
-        const removeReplica = async (workerId, replicaId) => handleAction(
-          'Remove replica failed',
-          () =>
-            send(`${apiBase}/workers/${workerId}/remove_replica`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ replica_id: replicaId }),
-            }),
-          'Replica removal triggered'
-        );
-
-        const syncReplica = async (workerId, resourceName) => handleAction(
-          'Sync failed',
-          () =>
-            send(`${apiBase}/workers/${workerId}/sync`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ resource: resourceName }),
-            }),
-          'Sync triggered'
-        );
-
-        const refreshAll = async () => {
-          banner.value = '';
-          modalNotice.value = { message: '', kind: 'info' };
-          const results = await Promise.allSettled([loadOverview(), loadWorkers(), loadResources()]);
-          const failed = results.find(r => r.status === 'rejected');
-          if (failed) {
-            setNotice(failed.reason?.message || 'Failed to reach supervisor API', 'danger');
-            return;
-          }
-          lastUpdated.value = Math.floor(Date.now() / 1000);
-          if (activeWorker.value) {
-            const updated = workers.value.find(w => w.worker_id === activeWorker.value.worker_id);
-            activeWorker.value = updated || null;
-          }
-        };
-
-        const statusClass = (status) => {
-          switch ((status || '').toLowerCase()) {
-            case 'ready': case 'success': return 'good';
-            case 'syncing': case 'init': case 'pending': return 'warn';
-            case 'approved': return 'good';
-            case 'rejected': return 'bad';
-            default: return 'bad';
-          }
-        };
-
-        const workerStatus = (worker) => {
-          const raw = worker?.status || (worker?.approved ? 'approved' : 'pending');
-          return (raw || '').toLowerCase();
-        };
-
-        const openWorker = (worker) => {
-          activeWorker.value = worker;
-          newReplica.value = {
-            name: '',
-            kind: 'git',
-            upstream: '',
-            interval_secs: 300,
-            labels_text: '',
-          };
-        };
-        const closeWorker = () => {
-          activeWorker.value = null;
-        };
-
-        const parseLabels = (text) => {
-          if (!text.trim()) return undefined;
-          return text.split(',').reduce((acc, entry) => {
-            const [k, v] = entry.split('=').map(s => s?.trim()).filter(Boolean);
-            if (k && v !== undefined) acc[k] = v;
-            return acc;
-          }, {});
-        };
-
-        const addReplica = async () => {
-          if (!activeWorker.value) return;
-          const payload = {
-            name: newReplica.value.name.trim(),
-            kind: newReplica.value.kind,
-            upstream: newReplica.value.upstream.trim(),
-            interval_secs: Number(newReplica.value.interval_secs) || null,
-            labels: parseLabels(newReplica.value.labels_text),
-          };
-          if (!payload.name || !payload.upstream) {
-            banner.value = 'Name and upstream are required';
-            return;
-          }
-          await handleAction(
-            'Add replica failed',
-            () =>
-              send(`${apiBase}/workers/${activeWorker.value.worker_id}/add_replica`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-              }),
-            'Replica add command sent'
-          );
-        };
-
-        const formatAbsolute = (tsSeconds) => {
-          if (!tsSeconds) return '-';
-          return new Date(tsSeconds * 1000).toLocaleString();
-        };
-
-        const formatRelative = (tsSeconds) => {
-          if (!tsSeconds) return '-';
-          const diff = Math.max(0, Math.floor(Date.now() / 1000) - tsSeconds);
-          if (diff < 60) return `${diff}s ago`;
-          if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-          if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-          return `${Math.floor(diff / 86400)}d ago`;
-        };
-
-        onMounted(refreshAll);
-
-        return {
-          apiBase,
-          overview,
-          workers,
-          resources,
-          loading,
-          banner,
-          lastUpdated,
-          isBusy,
-          modalNotice,
-          activeWorker,
-          newReplica,
-          approve,
-          reject,
-          terminate,
-          removeReplica,
-          syncReplica,
-          addReplica,
-          refreshAll,
-          statusClass,
-          workerStatus,
-          openWorker,
-          closeWorker,
-          formatAbsolute,
-          formatRelative,
-        };
-      }
-    }).mount('#app');
-  </script>
 </body>
 </html>
