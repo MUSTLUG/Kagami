@@ -17,6 +17,7 @@ use sea_orm::DatabaseConnection;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use tokio::time::{sleep, Duration};
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -904,13 +905,37 @@ fn resolve_webui_dir() -> Option<PathBuf> {
     None
 }
 
+async fn connect_nats_with_retry(nats_url: &str) -> async_nats::Client {
+    let mut attempt: u32 = 0;
+    loop {
+        match async_nats::connect(nats_url).await {
+            Ok(client) => {
+                if attempt > 0 {
+                    info!(%nats_url, attempts = attempt + 1, "Connected to NATS after retries");
+                }
+                return client;
+            }
+            Err(err) => {
+                attempt = attempt.saturating_add(1);
+                warn!(
+                    %nats_url,
+                    attempt,
+                    error = %err,
+                    "Failed to connect to NATS; retrying in 5 seconds"
+                );
+                sleep(Duration::from_secs(5)).await;
+            }
+        }
+    }
+}
+
 pub async fn start_supervisor_server(
     nats_url: String,
     http_addr: String,
     db_url: String,
     auto_approve: bool,
 ) -> anyhow::Result<()> {
-    let nats = async_nats::connect(nats_url).await?;
+    let nats = connect_nats_with_retry(&nats_url).await;
     let db = init_database(&db_url).await?;
     let supervisor_addr = run_supervisor(nats, auto_approve, Some(db)).await?;
     let webui_dir = resolve_webui_dir();

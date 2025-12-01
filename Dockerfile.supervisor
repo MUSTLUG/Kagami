@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM rustlang/rust:nightly-slim AS builder
+FROM rust:slim-bookworm AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
@@ -8,6 +8,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-dev \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+RUN rustup toolchain install nightly
 
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates

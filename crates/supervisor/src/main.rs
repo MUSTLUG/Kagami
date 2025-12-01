@@ -16,5 +16,10 @@ async fn main() -> anyhow::Result<()> {
     let db_url = env::var("SUPERVISOR_DATABASE_URL")
         .unwrap_or_else(|_| "sqlite://supervisor.db?mode=rwc".to_string());
 
-    start_supervisor_server(nats_url, http_addr, db_url, auto_approve).await
+    if let Err(err) = start_supervisor_server(nats_url, http_addr, db_url, auto_approve).await {
+        tracing::error!(error = %err, "Supervisor terminated with error");
+        return Err(err);
+    }
+
+    Ok(())
 }
