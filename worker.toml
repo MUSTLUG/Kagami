@@ -1,6 +1,6 @@
 # 本地初始 providers（支持 name/kind/upstream/interval_secs/labels）
 # 注意：如果是使用 Docker 部署，则此设置为容器内位址。建议保持默认值。
-data_dir = "./data"
+data_dir = "/data"
 
 [[providers]]
 name = "source-repo"
