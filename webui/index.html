@@ -28,23 +28,25 @@
         <div class="caption" v-if="isBusy">Updating…</div>
       </div>
 
-      <nav class="page-nav">
-        <button
-          v-for="page in pages"
-          :key="page.key"
-          type="button"
-          class="nav-link"
-          :class="{ active: activePage === page.key }"
-          @click="setPage(page.key)"
-        >
-          {{ page.label }}
-        </button>
-      </nav>
     </header>
+
+    <nav class="page-nav">
+      <button
+        v-for="page in pages"
+        :key="page.key"
+        type="button"
+        class="nav-link"
+        :class="{ active: activePage === page.key }"
+        @click="setPage(page.key)"
+      >
+        {{ page.label }}
+      </button>
+    </nav>
 
     <div v-if="banner" class="banner">
       <div>{{ banner }}</div>
       <button class="btn ghost" @click="refreshAll">Retry</button>
+    </div>
 
       <template v-if="activePage === 'overview'">
         <section class="stat-grid">
@@ -178,13 +180,14 @@
 
       <template v-if="activePage === 'workers'">
         <section class="panel">
-        <div>
-          <p class="eyebrow muted">Workers</p>
-          <h3>Fleet status</h3>
-          <p class="muted">Approve, terminate, and manage replicas per worker.</p>
-        </div>
-        <button class="btn primary" @click="refreshAll">Sync view</button>
-      </div>
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow muted">Workers</p>
+              <h3>Fleet status</h3>
+              <p class="muted">Approve, terminate, and manage replicas per worker.</p>
+            </div>
+            <button class="btn primary" @click="refreshAll">Sync view</button>
+          </div>
       <div class="muted" v-if="loading.workers">Loading workers...</div>
       <div class="table-shell" v-else>
         <table class="data-table">
